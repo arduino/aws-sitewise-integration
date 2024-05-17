@@ -1,0 +1,28 @@
+{
+    "jobName": "sitewiseimport-12",
+    "jobRoleArn": "arn:aws:iam::257442868231:role/sitewise-import-job",
+	"files": [
+        {
+            "bucket": "sitewiseimport-demo",
+            "key": "sitewise-sample-data-cp2.csv"
+        }
+    ],
+    "errorReportLocation": {
+        "bucket": "sitewiseimport-demo",
+        "prefix": "errors-sitewisesample"
+    },
+    "jobConfiguration": {
+        "fileFormat": {
+            "csv": {
+                "columnNames": [
+                    "ALIAS",
+					"DATA_TYPE",
+					"TIMESTAMP_SECONDS",
+					"TIMESTAMP_NANO_OFFSET",
+					"QUALITY",
+					"VALUE"
+                ]
+            }
+        }
+    }
+}
