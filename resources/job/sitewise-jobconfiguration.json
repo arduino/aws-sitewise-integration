@@ -1,0 +1,28 @@
+{
+    "jobName": "sitewiseimport-<number>",
+    "jobRoleArn": "<role arn>",
+	"files": [
+        {
+            "bucket": "<S3 bucket>",
+            "key": "<file key>"
+        }
+    ],
+    "errorReportLocation": {
+        "bucket": "<S3 bucket>",
+        "prefix": "errors-sitewisesample"
+    },
+    "jobConfiguration": {
+        "fileFormat": {
+            "csv": {
+                "columnNames": [
+                    "ALIAS",
+					"DATA_TYPE",
+					"TIMESTAMP_SECONDS",
+					"TIMESTAMP_NANO_OFFSET",
+					"QUALITY",
+					"VALUE"
+                ]
+            }
+        }
+    }
+}
