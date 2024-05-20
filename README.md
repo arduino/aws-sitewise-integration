@@ -33,7 +33,7 @@ Required steps to deploy project:
 * compile lambda
 ```console
 foo@bar:~$ ./compile-lambda.sh
-Create sitewise-aligner.zip archive
+sitewise-aligner.zip archive created
 ```
 * Create a new lambda function based on Amazon Linux (suitable to execute golang code). As code, use sitewise-aligner.zip file created by above script.
 * Create SSM parameters described above and configure them properly

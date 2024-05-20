@@ -38,7 +38,7 @@ type TsAligner struct {
 }
 
 func New(sitewisecl *sitewiseclient.IotSiteWiseClient, iotcl *iot.Client, logger *logrus.Entry) *TsAligner {
-	return &TsAligner{sitewisecl: sitewisecl, iotcl: iotcl}
+	return &TsAligner{sitewisecl: sitewisecl, iotcl: iotcl, logger: logger}
 }
 
 func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(

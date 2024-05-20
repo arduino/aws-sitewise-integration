@@ -37,6 +37,11 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		return err
 	}
 
+	logger.Infoln("Discovered models:")
+	for k, v :=  range models {
+		logger.Infoln("Model: ", k, v.Id)
+	}
+
 	for _, thing := range things {
 		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
 		propsAliasMap := make(map[string]string, len(thing.Properties))
@@ -44,17 +49,18 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		for _, prop := range thing.Properties {
 			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
 			propsTypeMap[prop.Name] = prop.Type
-			logger.Infoln("  Property: ", prop.Name, prop.Type, " -> ", propsAliasMap[prop.Name])
 		}
+		
+		key := buildModelKeyFromMap(propsAliasMap)
+		logger.Infoln("Searching for model with key: ", key)
 
 		_, ok := assets[thing.Id]
 		if ok {
-			logger.Infoln("Thing already aligned, skipping. Thing: ", thing.Id)
+			logger.Infoln("Thing is already aligned, skipping it. ID: ", thing.Id)
 			continue
 		}
 
 		// Discover thing properties
-		key := buildModelKeyFromMap(propsAliasMap)
 		model, ok := models[key]
 		var modelId *string
 		if !ok {
@@ -149,13 +155,15 @@ func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 			}
 
 			if len(descModel.AssetModelProperties) > 0 {
-				props := make([]string, len(descModel.AssetModelProperties))
+				props := make([]string, 0, len(descModel.AssetModelProperties))
 				for _, prop := range descModel.AssetModelProperties {
-					if prop.Type != nil && prop.Type.Measurement != nil { // Check if property is a measurement, not an aggregate
+					if prop.Type != nil && *prop.Name != "" && prop.Type.Measurement != nil { // Check if property is a measurement, not an aggregate
 						props = append(props, *prop.Name)
 					}
 				}
-				discoveredModels[buildModelKey(props)] = &model
+				if len(props) > 0 {
+					discoveredModels[buildModelKey(props)] = &model
+				}	
 			}
 		}
 	}
@@ -168,9 +176,11 @@ func buildModelKey(props []string) string {
 }
 
 func buildModelKeyFromMap(propMap map[string]string) string {
-	props := make([]string, len(propMap))
+	props := make([]string, 0, len(propMap))
 	for k := range propMap {
-		props = append(props, k)
+		if propMap[k] != "" {
+			props = append(props, k)
+		}
 	}
 	slices.Sort(props)
 	return strings.Join(props, ",")
