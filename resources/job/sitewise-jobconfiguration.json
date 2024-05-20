@@ -1,14 +1,14 @@
 {
-    "jobName": "sitewiseimport-12",
-    "jobRoleArn": "arn:aws:iam::257442868231:role/sitewise-import-job",
+    "jobName": "sitewiseimport-<number>",
+    "jobRoleArn": "<role arn>",
 	"files": [
         {
-            "bucket": "sitewiseimport-demo",
-            "key": "sitewise-sample-data-cp2.csv"
+            "bucket": "<S3 bucket>",
+            "key": "<file key>"
         }
     ],
     "errorReportLocation": {
-        "bucket": "sitewiseimport-demo",
+        "bucket": "<S3 bucket>",
         "prefix": "errors-sitewisesample"
     },
     "jobConfiguration": {
