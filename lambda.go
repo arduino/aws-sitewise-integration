@@ -11,37 +11,46 @@ import (
 )
 
 type SiteWiseImportTrigger struct {
-	Tags string `json:"tags"`
-	Dev  bool   `json:"dev"`
+	Dev bool `json:"dev"`
 }
+
+const (
+	IoTApiKey                   = "/sitewise-importer/iot/api-key"
+	IoTApiSecret                = "/sitewise-importer/iot/api-secret"
+	IoTApiOrgId                 = "/sitewise-importer/iot/org-id"
+	IoTApiTags                  = "/sitewise-importer/iot/filter/tags"
+	SamplesResolutionSeconds    = 300
+	TimeExtractionWindowMinutes = 30
+)
 
 func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, error) {
 
 	var tags *string
-	if event.Tags != "" {
-		tags = &event.Tags
-	}
 
 	println("------ Reading parameters from SSM")
 	paramReader, err := parameters.New()
 	if err != nil {
 		return nil, err
 	}
-	apikey, err := paramReader.ReadConfig("/sitewise-importer/iot/api-key")
+	apikey, err := paramReader.ReadConfig(IoTApiKey)
 	if err != nil {
-		println("Error reading parameter /sitewise-importer/iot/api-key", err)
+		println("Error reading parameter "+IoTApiKey, err)
 	}
-	apiSecret, err := paramReader.ReadConfig("/sitewise-importer/iot/api-secret")
+	apiSecret, err := paramReader.ReadConfig(IoTApiSecret)
 	if err != nil {
-		println("Error reading parameter /sitewise-importer/iot/api-secret", err)
+		println("Error reading parameter "+IoTApiSecret, err)
 	}
-	origId, _ := paramReader.ReadConfig("/sitewise-importer/iot/org-id")
+	origId, _ := paramReader.ReadConfig(IoTApiOrgId)
 	organizationId := ""
 	if origId != nil {
 		organizationId = *origId
 	}
 	if apikey == nil || apiSecret == nil {
 		return nil, errors.New("key and secret are required")
+	}
+	tagsParam, _ := paramReader.ReadConfig(IoTApiTags)
+	if tagsParam != nil {
+		tags = tagsParam
 	}
 
 	println("Running import...")
@@ -56,7 +65,7 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		println("tags:", *tags)
 	}
 
-	err = align.StartAlignAndImport(ctx, *apikey, *apiSecret, organizationId, tags, true, 300, 30)
+	err = align.StartAlignAndImport(ctx, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
 	if err != nil {
 		return nil, err
 	}
