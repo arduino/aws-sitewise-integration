@@ -1,3 +1,18 @@
+// This file is part of arduino aws-sitewise-integration.
+//
+// Copyright 2024 ARDUINO SA (http://www.arduino.cc/)
+//
+// This software is released under the Mozilla Public License Version 2.0,
+// which covers the main part of aws-sitewise-integration.
+// The terms of this license can be found at:
+// https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt
+//
+// You can be released from the requirements of the above licenses by purchasing
+// a commercial license. Buying such a license is mandatory if you want to
+// modify or otherwise use the software for commercial activities involving the
+// Arduino software without disclosing the source code of your own applications.
+// To purchase a commercial license, send an email to license@arduino.cc.
+
 package align
 
 import (
@@ -20,7 +35,7 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	}
 
 	// Init clients
-	sitewisecl, err := sitewiseclient.New()
+	sitewisecl, err := sitewiseclient.New(logger)
 	if err != nil {
 		return err
 	}
@@ -47,7 +62,7 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	tsAlignerClient := tsalign.New(sitewisecl, iotcl, logger)
 
 	if alignEntities {
-		err = entityalign.Align(ctx, things, sitewisecl)
+		err = entityalign.Align(ctx, logger, things, sitewisecl)
 		if err != nil {
 			return err
 		}

@@ -1,3 +1,18 @@
+// This file is part of arduino aws-sitewise-integration.
+//
+// Copyright 2024 ARDUINO SA (http://www.arduino.cc/)
+//
+// This software is released under the Mozilla Public License Version 2.0,
+// which covers the main part of aws-sitewise-integration.
+// The terms of this license can be found at:
+// https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt
+//
+// You can be released from the requirements of the above licenses by purchasing
+// a commercial license. Buying such a license is mandatory if you want to
+// modify or otherwise use the software for commercial activities involving the
+// Arduino software without disclosing the source code of your own applications.
+// To purchase a commercial license, send an email to license@arduino.cc.
+
 package sitewiseclient
 
 import (
@@ -10,13 +25,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise/types"
+	"github.com/sirupsen/logrus"
 )
 
 type IotSiteWiseClient struct {
-	svc *iotsitewise.Client
+	svc    *iotsitewise.Client
+	logger *logrus.Entry
 }
 
-func New() (*IotSiteWiseClient, error) {
+func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	awsOpts := []func(*config.LoadOptions) error{}
 
 	cfg, err := config.LoadDefaultConfig(
@@ -29,7 +46,8 @@ func New() (*IotSiteWiseClient, error) {
 	svc := iotsitewise.NewFromConfig(cfg)
 
 	return &IotSiteWiseClient{
-		svc: svc,
+		svc:    svc,
+		logger: logger,
 	}, nil
 }
 
@@ -216,7 +234,7 @@ func (c *IotSiteWiseClient) UpdateAssetProperty(ctx context.Context, assetId str
 	for property, alias := range thingProperties {
 		sitewisePropertyId, ok := assetPropertiesMap[property]
 		if !ok {
-			println("Property not found in asset: ", property)
+			c.logger.Info("Property not found in asset: ", property)
 			continue
 		}
 		_, err := c.svc.UpdateAssetProperty(ctx, &iotsitewise.UpdateAssetPropertyInput{
@@ -284,10 +302,10 @@ func (c *IotSiteWiseClient) populateTimeSeriesImpl(ctx context.Context, assetId,
 	}
 	if out.ErrorEntries != nil {
 		for _, entry := range out.ErrorEntries {
-			println("[PopulateTimeSeries] Error on entry: ", *entry.EntryId)
+			c.logger.Error("Error on entry: ", *entry.EntryId)
 			if entry.Errors != nil {
 				for _, err := range entry.Errors {
-					println("		[Error] ", err.ErrorCode, *err.ErrorMessage)
+					c.logger.Error("		[Error] ", err.ErrorCode, *err.ErrorMessage)
 				}
 			}
 		}

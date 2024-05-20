@@ -1,3 +1,17 @@
+// This file is part of arduino aws-sitewise-integration.
+//
+// Copyright 2024 ARDUINO SA (http://www.arduino.cc/)
+//
+// This software is released under the Mozilla Public License Version 2.0,
+// which covers the main part of aws-sitewise-integration.
+// The terms of this license can be found at:
+// https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt
+//
+// You can be released from the requirements of the above licenses by purchasing
+// a commercial license. Buying such a license is mandatory if you want to
+// modify or otherwise use the software for commercial activities involving the
+// Arduino software without disclosing the source code of your own applications.
+// To purchase a commercial license, send an email to license@arduino.cc.
 package entityalign
 
 import (
@@ -9,32 +23,33 @@ import (
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	iotclient "github.com/arduino/iot-client-go"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise/types"
+	"github.com/sirupsen/logrus"
 )
 
-func Align(ctx context.Context, things []iotclient.ArduinoThing, sitewisecl *sitewiseclient.IotSiteWiseClient) error {
-	println("=====> Aligning entities")
-	models, err := getSiteWiseModels(ctx, sitewisecl)
+func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.ArduinoThing, sitewisecl *sitewiseclient.IotSiteWiseClient) error {
+	logger.Infoln("=====> Aligning entities")
+	models, err := getSiteWiseModels(ctx, logger, sitewisecl)
 	if err != nil {
 		return err
 	}
-	assets, err := getSiteWiseAssets(ctx, sitewisecl, models)
+	assets, err := getSiteWiseAssets(ctx, logger, sitewisecl, models)
 	if err != nil {
 		return err
 	}
 
 	for _, thing := range things {
-		println("=====> Aligning thing: ", thing.Id, thing.Name)
+		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
 		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
 			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
 			propsTypeMap[prop.Name] = prop.Type
-			println("  Property: ", prop.Name, prop.Type, " -> ", propsAliasMap[prop.Name])
+			logger.Infoln("  Property: ", prop.Name, prop.Type, " -> ", propsAliasMap[prop.Name])
 		}
 
 		_, ok := assets[thing.Id]
 		if ok {
-			println("Thing already aligned, skipping. Thing: ", thing.Id)
+			logger.Infoln("Thing already aligned, skipping. Thing: ", thing.Id)
 			continue
 		}
 
@@ -43,7 +58,7 @@ func Align(ctx context.Context, things []iotclient.ArduinoThing, sitewisecl *sit
 		model, ok := models[key]
 		var modelId *string
 		if !ok {
-			println("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
+			logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
 			createdModel, err := sitewisecl.CreateAssetModel(ctx, composeModelName(thing.Name), propsTypeMap)
 			if err != nil {
 				return err
@@ -55,7 +70,7 @@ func Align(ctx context.Context, things []iotclient.ArduinoThing, sitewisecl *sit
 		}
 
 		// Create asset
-		println("Creating asset for thing: ", thing.Id)
+		logger.Infoln("Creating asset for thing: ", thing.Id)
 		asset, err := sitewisecl.CreateAsset(ctx, thing.Name, *modelId, thing.Id)
 		if err != nil {
 			return err
@@ -82,9 +97,9 @@ func propertyAlias(thingName, propertyName string) string {
 	return fmt.Sprintf("/%s/%s", thingName, propertyName)
 }
 
-func getSiteWiseAssets(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*types.AssetModelSummary) (map[string]string, error) {
+func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*types.AssetModelSummary) (map[string]string, error) {
 	discoveredAssets := make(map[string]string)
-	println("=====> Get SiteWise assets")
+	logger.Infoln("=====> Get SiteWise assets")
 	for _, model := range models {
 		next := true
 		var token *string
@@ -110,9 +125,9 @@ func getSiteWiseAssets(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWi
 	return discoveredAssets, nil
 }
 
-func getSiteWiseModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*types.AssetModelSummary, error) {
+func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*types.AssetModelSummary, error) {
 	discoveredModels := make(map[string]*types.AssetModelSummary)
-	println("=====> Get SiteWise models")
+	logger.Infoln("=====> Get SiteWise models")
 	next := true
 	var token *string
 	for next {

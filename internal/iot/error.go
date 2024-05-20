@@ -1,19 +1,17 @@
-// This file is part of arduino-cloud-cli.
+// This file is part of arduino aws-sitewise-integration.
 //
-// Copyright (C) 2021 ARDUINO SA (http://www.arduino.cc/)
+// Copyright 2024 ARDUINO SA (http://www.arduino.cc/)
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published
-// by the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// This software is released under the Mozilla Public License Version 2.0,
+// which covers the main part of aws-sitewise-integration.
+// The terms of this license can be found at:
+// https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// You can be released from the requirements of the above licenses by purchasing
+// a commercial license. Buying such a license is mandatory if you want to
+// modify or otherwise use the software for commercial activities involving the
+// Arduino software without disclosing the source code of your own applications.
+// To purchase a commercial license, send an email to license@arduino.cc.
 
 package iot
 
