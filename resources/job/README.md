@@ -22,6 +22,10 @@ job can be started with command. You can use [jboconfiguration.json](jboconfigur
 aws iotsitewise create-bulk-import-job --cli-input-json file://jboconfiguration.json
 ```
 
+Role requires following policies: AWSIoTSiteWiseFullAccess, AmazonS3FullAccess. Is it possible to fine tune accesses: if required, please refers to AWS documentation.
+
+For more info, see [AWS create bulk import job documentation](https://docs.aws.amazon.com/iot-sitewise/latest/userguide/CreateBulkImportJob.html)
+
 ## Check job status
 
 Given the id returned by the above command, it is possible to monitor job using following command
@@ -30,5 +34,6 @@ foo@bar:~$ aws iotsitewise describe-bulk-import-job --job-id <job identifier>
 ```
 
 ## AWS resources
+https://docs.aws.amazon.com/iot-sitewise/latest/userguide/CreateBulkImportJob.html
 https://docs.aws.amazon.com/cli/latest/reference/iotsitewise/create-bulk-import-job.html
 https://docs.aws.amazon.com/iot-sitewise/latest/userguide/ingest-bulkImport.html
