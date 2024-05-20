@@ -11,6 +11,7 @@ import (
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	iotclient "github.com/arduino/iot-client-go"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
+	"github.com/sirupsen/logrus"
 )
 
 const importConcurrency = 5
@@ -18,9 +19,10 @@ const importConcurrency = 5
 type TsAligner struct {
 	sitewisecl *sitewiseclient.IotSiteWiseClient
 	iotcl      *iot.Client
+	logger     *logrus.Entry
 }
 
-func New(sitewisecl *sitewiseclient.IotSiteWiseClient, iotcl *iot.Client) *TsAligner {
+func New(sitewisecl *sitewiseclient.IotSiteWiseClient, iotcl *iot.Client, logger *logrus.Entry) *TsAligner {
 	return &TsAligner{sitewisecl: sitewisecl, iotcl: iotcl}
 }
 
@@ -33,7 +35,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, importConcurrency)
 
-	println("=====> Align perf data - last ", timeWindowInMinutes, " minutes")
+	a.logger.Infoln("=====> Align perf data - last ", timeWindowInMinutes, " minutes")
 	models, err := a.sitewisecl.ListAssetModels(ctx, nil)
 	if err != nil {
 		return err
@@ -53,7 +55,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 				}
 				thing, ok := thingsMap[*asset.ExternalId]
 				if !ok {
-					println("Thing not found: ", *asset.ExternalId)
+					a.logger.Warn("Thing not found: ", *asset.ExternalId)
 					continue
 				}
 
@@ -66,15 +68,15 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 					describedAsset, err := a.sitewisecl.DescribeAsset(ctx, assetId)
 					if err != nil {
-						println("Error describing asset: ", assetId, err)
+						a.logger.Error("Error describing asset: ", assetId, err)
 						return
 					}
 
-					propertiesToImport, propertiesToImportAliases := mapPropertiesToImport(describedAsset, thing, assetName)
+					propertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
 					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, propertiesToImport, propertiesToImportAliases, resolution)
 					if err != nil {
-						println("Error populating time series data: ", err)
+						a.logger.Error("Error populating time series data: ", err)
 						return
 					}
 				}(*asset.Id, *asset.Name)
@@ -93,13 +95,13 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	return nil
 }
 
-func mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) ([]string, map[string]string) {
+func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) ([]string, map[string]string) {
 	propertiesToImport := make([]string, 0, len(describedAsset.AssetProperties))
 	propertiesToImportAliases := make(map[string]string, len(describedAsset.AssetProperties))
 	for _, prop := range describedAsset.AssetProperties {
 		for _, thingProperty := range thing.Properties {
 			if *prop.Name == thingProperty.Name {
-				println("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
+				a.logger.Infoln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
 				propertiesToImport = append(propertiesToImport, thingProperty.Id)
 				propertiesToImportAliases[thingProperty.Id] = fmt.Sprintf("/%s/%s", thing.Name, *prop.Name)
 			}
@@ -131,9 +133,9 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		}
 		property := strings.Replace(response.Query, "property.", "", 1)
 		alias := propertiesToImportAliases[property]
-		println("  Importing ", len(ts), " data points for: ", alias, " - ts:", joinTs(ts))
+		a.logger.Infoln("  Importing ", len(ts), " data points for: ", alias, " - ts:", joinTs(ts))
 		if alias == "" {
-			println("Alias not found. Skipping import.")
+			a.logger.Warn("Alias not found. Skipping import.")
 			continue
 		}
 		erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, ts, response.Values)

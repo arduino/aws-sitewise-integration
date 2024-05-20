@@ -10,9 +10,10 @@ import (
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	"github.com/arduino/aws-sitewise-integration/internal/utils"
 	iotclient "github.com/arduino/iot-client-go"
+	"github.com/sirupsen/logrus"
 )
 
-func StartAlignAndImport(ctx context.Context, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) error {
+func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) error {
 
 	if (timeWindowMinutes*60)/resolution > 10 {
 		return fmt.Errorf("timeWindowMinutes/resolution must be less or equal to 10")
@@ -29,9 +30,9 @@ func StartAlignAndImport(ctx context.Context, key, secret, orgid string, tagsF *
 	}
 
 	if tagsF == nil {
-		println("Things - searching with no filter")
+		logger.Infoln("Things - searching with no filter")
 	} else {
-		println("Things - searching by tags: ", *tagsF)
+		logger.Infoln("Things - searching by tags: ", *tagsF)
 	}
 	things, err := iotcl.ThingList(ctx, nil, nil, true, utils.ParseTags(tagsF))
 	if err != nil {
@@ -39,11 +40,11 @@ func StartAlignAndImport(ctx context.Context, key, secret, orgid string, tagsF *
 	}
 	thingsMap := make(map[string]iotclient.ArduinoThing, len(things))
 	for _, thing := range things {
-		println("  Thing: ", thing.Id, thing.Name)
+		logger.Infoln("  Thing: ", thing.Id, thing.Name)
 		thingsMap[thing.Id] = thing
 	}
 
-	tsAlignerClient := tsalign.New(sitewisecl, iotcl)
+	tsAlignerClient := tsalign.New(sitewisecl, iotcl, logger)
 
 	if alignEntities {
 		err = entityalign.Align(ctx, things, sitewisecl)
@@ -54,7 +55,7 @@ func StartAlignAndImport(ctx context.Context, key, secret, orgid string, tagsF *
 
 	// Extract data points from thing and push to SiteWise
 	if err := tsAlignerClient.AlignTimeSeriesSamplesIntoSiteWise(ctx, timeWindowMinutes, thingsMap, resolution); err != nil {
-		fmt.Println("Error aligning time series samples: ", err)
+		logger.Error("Error aligning time series samples: ", err)
 	}
 
 	return nil

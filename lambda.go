@@ -8,6 +8,7 @@ import (
 	"github.com/arduino/aws-sitewise-integration/app/align"
 	"github.com/arduino/aws-sitewise-integration/internal/parameters"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/sirupsen/logrus"
 )
 
 type SiteWiseImportTrigger struct {
@@ -25,20 +26,22 @@ const (
 
 func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, error) {
 
+	logger := logrus.NewEntry(logrus.New())
+
 	var tags *string
 
-	println("------ Reading parameters from SSM")
+	logger.Infoln("------ Reading parameters from SSM")
 	paramReader, err := parameters.New()
 	if err != nil {
 		return nil, err
 	}
 	apikey, err := paramReader.ReadConfig(IoTApiKey)
 	if err != nil {
-		println("Error reading parameter "+IoTApiKey, err)
+		logger.Error("Error reading parameter "+IoTApiKey, err)
 	}
 	apiSecret, err := paramReader.ReadConfig(IoTApiSecret)
 	if err != nil {
-		println("Error reading parameter "+IoTApiSecret, err)
+		logger.Error("Error reading parameter "+IoTApiSecret, err)
 	}
 	origId, _ := paramReader.ReadConfig(IoTApiOrgId)
 	organizationId := ""
@@ -53,19 +56,19 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		tags = tagsParam
 	}
 
-	println("Running import...")
+	logger.Infoln("------ Running import...")
 	if event.Dev {
-		println("Running in dev mode")
+		logger.Infoln("Running in dev mode")
 		os.Setenv("IOT_API_URL", "https://api-dev.arduino.cc")
 	}
-	println("key:", *apikey)
-	println("secret:", *apiSecret)
-	println("organization-id:", organizationId)
+	logger.Infoln("key:", *apikey)
+	logger.Infoln("secret:", *apiSecret)
+	logger.Infoln("organization-id:", organizationId)
 	if tags != nil {
-		println("tags:", *tags)
+		logger.Infoln("tags:", *tags)
 	}
 
-	err = align.StartAlignAndImport(ctx, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
+	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
 	if err != nil {
 		return nil, err
 	}
