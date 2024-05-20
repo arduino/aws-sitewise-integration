@@ -59,8 +59,6 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 		thingsMap[thing.Id] = thing
 	}
 
-	tsAlignerClient := tsalign.New(sitewisecl, iotcl, logger)
-
 	if alignEntities {
 		err = entityalign.Align(ctx, logger, things, sitewisecl)
 		if err != nil {
@@ -69,6 +67,7 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	}
 
 	// Extract data points from thing and push to SiteWise
+	tsAlignerClient := tsalign.New(sitewisecl, iotcl, logger)
 	if err := tsAlignerClient.AlignTimeSeriesSamplesIntoSiteWise(ctx, timeWindowMinutes, thingsMap, resolution); err != nil {
 		logger.Error("Error aligning time series samples: ", err)
 	}
