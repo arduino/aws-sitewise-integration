@@ -130,7 +130,7 @@ func (c *IotSiteWiseClient) GetBulkImportJobStatus(ctx context.Context, jobId *s
 
 func mapType(ptype string) types.PropertyDataType {
 	ptype = strings.ToUpper(ptype)
-	if strings.HasPrefix(ptype, "TEMPERATURE") {
+	if strings.HasPrefix(ptype, "TEMPERATURE") || strings.HasPrefix(ptype, "PERCENTAGE") {
 		return types.PropertyDataTypeDouble
 	}
 	switch ptype {
@@ -138,7 +138,7 @@ func mapType(ptype string) types.PropertyDataType {
 		return types.PropertyDataTypeBoolean
 	case "INT":
 		return types.PropertyDataTypeInteger
-	case "FLOAT", "TEMPERATURE", "DOUBLE":
+	case "FLOAT", "TEMPERATURE", "DOUBLE", "VOLT", "WATT":
 		return types.PropertyDataTypeDouble
 	default:
 		return types.PropertyDataTypeString

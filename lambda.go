@@ -74,7 +74,7 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	logger.Infoln("------ Running import...")
 	if event.Dev {
 		logger.Infoln("Running in dev mode")
-		os.Setenv("IOT_API_URL", "https://api-dev.arduino.cc")
+		os.Setenv("IOT_API_URL", "https://api2.oniudra.cc")
 	}
 	logger.Infoln("key:", *apikey)
 	logger.Infoln("secret:", *apiSecret)

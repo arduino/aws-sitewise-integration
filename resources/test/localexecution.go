@@ -54,7 +54,7 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 	logger.Infoln("------ Running import...")
 	if dev {
 		logger.Infoln("Running in dev mode")
-		os.Setenv("IOT_API_URL", "https://api-dev.arduino.cc")
+		os.Setenv("IOT_API_URL", "https://api2.oniudra.cc")
 	}
 	logger.Infoln("key:", *apikey)
 	logger.Infoln("secret:", *apiSecret)
