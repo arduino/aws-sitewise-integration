@@ -24,7 +24,7 @@ import (
 
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
-	iotclient "github.com/arduino/iot-client-go"
+	iotclient "github.com/arduino/iot-client-go/v2"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
 	"github.com/sirupsen/logrus"
 )

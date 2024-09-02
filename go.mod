@@ -1,17 +1,17 @@
 module github.com/arduino/aws-sitewise-integration
 
-go 1.22.2
+go 1.22.6
 
 require (
 	github.com/antihax/optional v1.0.0
-	github.com/arduino/iot-client-go v1.4.4
+	github.com/arduino/iot-client-go/v2 v2.0.4
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/service/iotsitewise v1.37.4
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.50.1
 	github.com/sirupsen/logrus v1.9.3
-	golang.org/x/oauth2 v0.20.0
+	golang.org/x/oauth2 v0.21.0
 )
 
 require (

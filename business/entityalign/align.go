@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
-	iotclient "github.com/arduino/iot-client-go"
+	iotclient "github.com/arduino/iot-client-go/v2"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise/types"
 	"github.com/sirupsen/logrus"
 )
@@ -38,7 +38,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	}
 
 	logger.Infoln("Discovered models:")
-	for k, v :=  range models {
+	for k, v := range models {
 		logger.Infoln("Model: ", k, v.Id)
 	}
 
@@ -50,7 +50,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
 			propsTypeMap[prop.Name] = prop.Type
 		}
-		
+
 		key := buildModelKeyFromMap(propsAliasMap)
 		logger.Infoln("Searching for model with key: ", key)
 
@@ -163,7 +163,7 @@ func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 				}
 				if len(props) > 0 {
 					discoveredModels[buildModelKey(props)] = &model
-				}	
+				}
 			}
 		}
 	}

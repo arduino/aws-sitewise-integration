@@ -1,4 +1,4 @@
-# AWS IoT SiteWise imported
+# AWS IoT SiteWise importer
 
 This project provides a way to extract time series samples from Arduino cloud, publishing into AWS IoT SiteWise.
 Other than publishing ts samples, job is able to create Models/Assets into SiteWise starting from Arduino defined Things.
