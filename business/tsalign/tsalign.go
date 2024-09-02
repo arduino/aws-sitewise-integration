@@ -18,6 +18,7 @@ package tsalign
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +69,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 				if asset.ExternalId == nil {
 					continue
 				}
+				// Asset external id is mapped on Thing ID
 				thing, ok := thingsMap[*asset.ExternalId]
 				if !ok {
 					a.logger.Warn("Thing not found: ", *asset.ExternalId)
@@ -89,7 +91,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 					propertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
-					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, propertiesToImport, propertiesToImportAliases, resolution)
+					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution)
 					if err != nil {
 						a.logger.Error("Error populating time series data: ", err)
 						return
@@ -128,13 +130,20 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 func (a *TsAligner) populateTSDataIntoSiteWise(
 	ctx context.Context,
 	loopMinutes int,
+	thingID string,
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
 	resolution int) error {
 
 	to := time.Now().UTC()
 	from := to.Add(-time.Duration(loopMinutes) * time.Minute)
-	batched, err := a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+	var batched *iotclient.ArduinoSeriesBatch
+	var err error
+	if thingID != "" {
+		batched, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
+	} else {
+		batched, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+	}
 	if err != nil {
 		return err
 	}
@@ -146,8 +155,12 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		for _, t := range response.Times {
 			ts = append(ts, t.Unix())
 		}
-		property := strings.Replace(response.Query, "property.", "", 1)
-		alias := propertiesToImportAliases[property]
+		propertyID := strings.Replace(response.Query, "property.", "", 1)
+		if !slices.Contains(propertiesToImport, propertyID) {
+			a.logger.Infof("Not mapped property %s. Skipping import.\n", propertyID)
+			continue
+		}
+		alias := propertiesToImportAliases[propertyID]
 		a.logger.Infoln("  Importing ", len(ts), " data points for: ", alias, " - ts:", joinTs(ts))
 		if alias == "" {
 			a.logger.Warn("Alias not found. Skipping import.")
