@@ -4,7 +4,7 @@ Description: Arduino SiteWise data integration. For deployment and architectural
 Parameters:
   LambdaFunctionName:
     Type: String
-    Default: sitewise-importer-function
+    Default: 'cloud-formation-test-sitewise-importer-function'
     Description: Name of the Lambda function.
 
   LambdaS3Bucket:
@@ -14,7 +14,7 @@ Parameters:
 
   LambdaS3Key:
     Type: String
-    Default: 'sitewise-importer.zip'
+    Default: 'arduino-sitewise-integration-lambda.zip'
     Description: S3 key for the Lambda function ZIP file.
 
   IotApiKey:

@@ -17,7 +17,6 @@ package align
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/arduino/aws-sitewise-integration/business/entityalign"
 	"github.com/arduino/aws-sitewise-integration/business/tsalign"
@@ -29,10 +28,6 @@ import (
 )
 
 func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) error {
-
-	if (timeWindowMinutes*60)/resolution > 10 {
-		return fmt.Errorf("timeWindowMinutes/resolution must be less or equal to 10")
-	}
 
 	// Init clients
 	sitewisecl, err := sitewiseclient.New(logger)

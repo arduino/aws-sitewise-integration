@@ -32,11 +32,11 @@ type SiteWiseImportTrigger struct {
 
 const (
 	ArduinoPrefix               = "/arduino/sitewise-importer"
-	IoTApiKey                   = ArduinoPrefix+"/iot/api-key"
-	IoTApiSecret                = ArduinoPrefix+"/iot/api-secret"
-	IoTApiOrgId                 = ArduinoPrefix+"/iot/org-id"
-	IoTApiTags                  = ArduinoPrefix+"/iot/filter/tags"
-	SamplesResoSec              = ArduinoPrefix+"/iot/samples-resolution-seconds"
+	IoTApiKey                   = ArduinoPrefix + "/iot/api-key"
+	IoTApiSecret                = ArduinoPrefix + "/iot/api-secret"
+	IoTApiOrgId                 = ArduinoPrefix + "/iot/org-id"
+	IoTApiTags                  = ArduinoPrefix + "/iot/filter/tags"
+	SamplesResoSec              = ArduinoPrefix + "/iot/samples-resolution-seconds"
 	SamplesResolutionSeconds    = 300
 	TimeExtractionWindowMinutes = 60
 )
@@ -78,6 +78,11 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		res := SamplesResolutionSeconds
 		resolution = &res
 	}
+	if *resolution < 60 || *resolution > 3600 {
+		logger.Errorf("Resolution %d is invalid", *resolution)
+		return nil, errors.New("resolution must be between 60 and 3600")
+	}
+
 	logger.Infoln("------ Running import...")
 	if event.Dev {
 		logger.Infoln("Running in dev mode")

@@ -151,27 +151,56 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		if response.CountValues == 0 {
 			continue
 		}
-		ts := make([]int64, 0, response.CountValues)
-		for _, t := range response.Times {
-			ts = append(ts, t.Unix())
-		}
+
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
 		if !slices.Contains(propertiesToImport, propertyID) {
 			a.logger.Infof("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
 		}
 		alias := propertiesToImportAliases[propertyID]
-		a.logger.Infoln("  Importing ", len(ts), " data points for: ", alias, " - ts:", joinTs(ts))
 		if alias == "" {
 			a.logger.Warn("Alias not found. Skipping import.")
 			continue
 		}
-		erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, ts, response.Values)
-		if erri != nil {
-			return err
+
+		chunks := partitionResults(response)
+		for _, c := range chunks {
+			a.logger.Infoln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
+			erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, c.ts, c.values)
+			if erri != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+type chunk struct {
+	ts     []int64
+	values []float64
+}
+
+// To be coherent with SiteWise API, we need to partition the results in chunks of 10 elements
+func partitionResults(response iotclient.ArduinoSeriesResponse) []chunk {
+	chunks := []chunk{}
+	for i := 0; i < len(response.Times); i += 10 {
+		end := i + 10
+		if end > len(response.Times) {
+			end = len(response.Times)
+		}
+
+		times := response.Times[i:end]
+		unixTimes := make([]int64, len(times))
+		for j := 0; j < len(times); j++ {
+			unixTimes[j] = times[j].Unix()
+		}
+		c := chunk{
+			ts:     unixTimes,
+			values: response.Values[i:end],
+		}
+		chunks = append(chunks, c)
+	}
+	return chunks
 }
 
 func joinTs(ts []int64) string {
