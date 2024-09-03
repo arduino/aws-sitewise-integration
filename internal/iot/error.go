@@ -32,7 +32,11 @@ func errorDetail(err error) error {
 
 	modErr, ok := apiErr.Model().(iotclient.ModelError)
 	if ok {
-		return fmt.Errorf("%w: %s", err, modErr.Detail)
+		if modErr.Detail != nil {
+			return fmt.Errorf("%w: %s", err, *modErr.Detail)
+		} else {
+			return err
+		}
 	}
 
 	body := make(map[string]interface{})

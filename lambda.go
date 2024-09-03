@@ -35,8 +35,9 @@ const (
 	IoTApiSecret                = "/sitewise-importer/iot/api-secret"
 	IoTApiOrgId                 = "/sitewise-importer/iot/org-id"
 	IoTApiTags                  = "/sitewise-importer/iot/filter/tags"
+	SamplesResoSec              = "/sitewise-importer/iot/samples-resolution-seconds"
 	SamplesResolutionSeconds    = 300
-	TimeExtractionWindowMinutes = 30
+	TimeExtractionWindowMinutes = 60
 )
 
 func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, error) {
@@ -70,7 +71,12 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	if tagsParam != nil {
 		tags = tagsParam
 	}
-
+	resolution, err := paramReader.ReadIntConfig(SamplesResoSec)
+	if err != nil {
+		logger.Warn("Error reading parameter "+SamplesResoSec+". Set resolution to default value", err)
+		res := SamplesResolutionSeconds
+		resolution = &res
+	}
 	logger.Infoln("------ Running import...")
 	if event.Dev {
 		logger.Infoln("Running in dev mode")
@@ -83,7 +89,7 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		logger.Infoln("tags:", *tags)
 	}
 
-	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
+	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, *resolution, TimeExtractionWindowMinutes)
 	if err != nil {
 		return nil, err
 	}

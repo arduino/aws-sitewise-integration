@@ -17,6 +17,7 @@ package parameters
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -55,4 +56,23 @@ func (c *ParametersClient) ReadConfig(param string) (*string, error) {
 		return nil, err
 	}
 	return value.Parameter.Value, nil
+}
+
+func (c *ParametersClient) ReadIntConfig(param string) (*int, error) {
+	value, err := c.ssmcl.GetParameter(context.Background(), &ssm.GetParameterInput{
+		Name:           aws.String(param),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if value.Parameter.Value == nil {
+		defaultValue := -1
+		return &defaultValue, nil
+	}
+	strconvValue, err := strconv.Atoi(*value.Parameter.Value)
+	if err != nil {
+		return nil, err
+	}
+	return &strconvValue, nil
 }
