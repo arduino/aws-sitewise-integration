@@ -139,10 +139,16 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 	from := to.Add(-time.Duration(loopMinutes) * time.Minute)
 	var batched *iotclient.ArduinoSeriesBatch
 	var err error
-	if thingID != "" {
-		batched, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
-	} else {
-		batched, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+	var retry bool
+	for i := 0; i < 3; i++ {
+		if thingID != "" {
+			batched, retry, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
+		} else {
+			batched, retry, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+		}
+		if !retry {
+			break
+		}
 	}
 	if err != nil {
 		return err

@@ -214,14 +214,14 @@ func (cl *Client) ThingTagsDelete(ctx context.Context, id string, keys []string)
 	return nil
 }
 
-func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, error) {
+func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, bool, error) {
 	if len(properties) == 0 {
-		return nil, fmt.Errorf("no properties provided")
+		return nil, false, fmt.Errorf("no properties provided")
 	}
 
 	ctx, err := ctxWithToken(ctx, cl.token)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	requests := make([]iotclient.BatchQueryRequestMediaV1, 0, len(properties))
@@ -238,7 +238,7 @@ func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, 
 	}
 
 	if len(requests) == 0 {
-		return nil, fmt.Errorf("no valid properties provided")
+		return nil, false, fmt.Errorf("no valid properties provided")
 	}
 
 	batchQueryRequestsMediaV1 := iotclient.BatchQueryRequestsMediaV1{
@@ -247,22 +247,25 @@ func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, 
 
 	request := cl.api.SeriesV2Api.SeriesV2BatchQuery(ctx)
 	request = request.BatchQueryRequestsMediaV1(batchQueryRequestsMediaV1)
-	ts, _, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
+	ts, httpResponse, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving time series: %w", errorDetail(err))
-		return nil, err
+		if httpResponse != nil && httpResponse.StatusCode == 429 { // Retry if rate limited
+			return nil, true, err
+		}
+		return nil, false, err
 	}
-	return ts, nil
+	return ts, false, nil
 }
 
-func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, error) {
+func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, bool, error) {
 	if thingID == "" {
-		return nil, fmt.Errorf("no thing provided")
+		return nil, false, fmt.Errorf("no thing provided")
 	}
 
 	ctx, err := ctxWithToken(ctx, cl.token)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	requests := []iotclient.BatchQueryRequestMediaV1{
@@ -275,7 +278,7 @@ func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from
 	}
 
 	if len(requests) == 0 {
-		return nil, fmt.Errorf("no valid properties provided")
+		return nil, false, fmt.Errorf("no valid properties provided")
 	}
 
 	batchQueryRequestsMediaV1 := iotclient.BatchQueryRequestsMediaV1{
@@ -284,12 +287,15 @@ func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from
 
 	request := cl.api.SeriesV2Api.SeriesV2BatchQuery(ctx)
 	request = request.BatchQueryRequestsMediaV1(batchQueryRequestsMediaV1)
-	ts, _, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
+	ts, httpResponse, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving time series: %w", errorDetail(err))
-		return nil, err
+		if httpResponse != nil && httpResponse.StatusCode == 429 { // Retry if rate limited
+			return nil, true, err
+		}
+		return nil, false, err
 	}
-	return ts, nil
+	return ts, false, nil
 }
 
 func (cl *Client) setup(client, secret, organization string) error {
