@@ -30,7 +30,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const importConcurrency = 5
+const importConcurrency = 10
 
 type TsAligner struct {
 	sitewisecl *sitewiseclient.IotSiteWiseClient
@@ -135,7 +135,7 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 	propertiesToImportAliases map[string]string,
 	resolution int) error {
 
-	to := time.Now().UTC()
+	to := time.Now().Truncate(time.Hour).UTC()
 	from := to.Add(-time.Duration(loopMinutes) * time.Minute)
 	var batched *iotclient.ArduinoSeriesBatch
 	var err error
