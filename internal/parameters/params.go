@@ -55,7 +55,12 @@ func (c *ParametersClient) ReadConfig(param string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return value.Parameter.Value, nil
+	paramValue := value.Parameter.Value
+	if paramValue == nil || *paramValue == "<empty>" {
+		defaultValue := ""
+		return &defaultValue, nil
+	}
+	return paramValue, nil
 }
 
 func (c *ParametersClient) ReadIntConfig(param string) (*int, error) {

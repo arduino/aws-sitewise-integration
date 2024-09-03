@@ -9,10 +9,12 @@ Parameters:
 
   LambdaS3Bucket:
     Type: String
+    Default: 'sitewiseimport-demo'
     Description: S3 bucket where the Lambda function ZIP file is stored.
 
   LambdaS3Key:
     Type: String
+    Default: 'sitewise-importer.zip'
     Description: S3 key for the Lambda function ZIP file.
 
   IotApiKey:
@@ -22,13 +24,16 @@ Parameters:
   IotApiSecret:
     Type: String
     Description: Arduino API Secret.
+    NoEcho: true
 
   IotOrgId:
     Type: String
+    Default: '<empty>'
     Description: Arduino Organization ID (optional).
 
   TagFilter:
     Type: String
+    Default: '<empty>'
     Description: Filter things to import by tag (optional). Format> tag1=value1,tag2=value2
 
   Resolution:
@@ -106,7 +111,7 @@ Resources:
     Type: AWS::SSM::Parameter
     Properties:
       Name: /arduino/sitewise-importer/iot/api-secret
-      Type: SecureString
+      Type: String
       Value:
         Ref: IotApiSecret
       Tier: Standard
