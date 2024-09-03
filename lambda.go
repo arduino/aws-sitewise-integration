@@ -31,11 +31,12 @@ type SiteWiseImportTrigger struct {
 }
 
 const (
-	IoTApiKey                   = "/sitewise-importer/iot/api-key"
-	IoTApiSecret                = "/sitewise-importer/iot/api-secret"
-	IoTApiOrgId                 = "/sitewise-importer/iot/org-id"
-	IoTApiTags                  = "/sitewise-importer/iot/filter/tags"
-	SamplesResoSec              = "/sitewise-importer/iot/samples-resolution-seconds"
+	ArduinoPrefix               = "/arduino/sitewise-importer"
+	IoTApiKey                   = ArduinoPrefix+"/iot/api-key"
+	IoTApiSecret                = ArduinoPrefix+"/iot/api-secret"
+	IoTApiOrgId                 = ArduinoPrefix+"/iot/org-id"
+	IoTApiTags                  = ArduinoPrefix+"/iot/filter/tags"
+	SamplesResoSec              = ArduinoPrefix+"/iot/samples-resolution-seconds"
 	SamplesResolutionSeconds    = 300
 	TimeExtractionWindowMinutes = 60
 )

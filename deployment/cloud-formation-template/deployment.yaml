@@ -65,7 +65,7 @@ Resources:
                   - ssm:GetParameter
                   - ssm:GetParameters
                   - ssm:GetParametersByPath
-                Resource: arn:aws:ssm:*:*:parameter/sitewise-importer/*
+                Resource: arn:aws:ssm:*:*:parameter/arduino/sitewise-importer/*
               - Effect: Allow
                 Action:
                   - iotsitewise:BatchPutAssetPropertyValue
@@ -79,12 +79,15 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Ref LambdaFunctionName
+      FunctionName:
+        Ref: LambdaFunctionName
       Handler: bootstrap
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: !Ref LambdaS3Bucket
-        S3Key: !Ref LambdaS3Key
+        S3Bucket:
+          Ref: LambdaS3Bucket
+        S3Key:
+          Ref: LambdaS3Key
       Runtime: provided.al2
       Timeout: 900
       MemorySize: 256
@@ -93,41 +96,46 @@ Resources:
   ApiKeyParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /sitewise-importer/iot/api-key
+      Name: /arduino/sitewise-importer/iot/api-key
       Type: String
-      Value: !Ref IotApiKey
+      Value:
+        Ref: IotApiKey
       Tier: Standard
 
   ApiSecretParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /sitewise-importer/iot/api-secret
+      Name: /arduino/sitewise-importer/iot/api-secret
       Type: SecureString
-      Value: !Ref IotApiSecret
+      Value:
+        Ref: IotApiSecret
       Tier: Standard
 
   OrgIdParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /sitewise-importer/iot/org-id
+      Name: /arduino/sitewise-importer/iot/org-id
       Type: String
-      Value: !Ref IotOrgId
+      Value:
+        Ref: IotOrgId
       Tier: Standard
 
   FilterTagsParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /sitewise-importer/iot/filter/tags
+      Name: /arduino/sitewise-importer/iot/filter/tags
       Type: String
-      Value: !Ref TagFilter
+      Value:
+        Ref: TagFilter
       Tier: Standard
 
   ResolutionParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /sitewise-importer/iot/samples-resolution-seconds
+      Name: /arduino/sitewise-importer/iot/samples-resolution-seconds
       Type: String
-      Value: !Ref Resolution
+      Value:
+        Ref: Resolution
       Tier: Standard
 
   # EventBridge Rule to trigger Lambda every hour
@@ -144,7 +152,8 @@ Resources:
   LambdaPermissionForEventBridge:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref LambdaFunctionName
+      FunctionName:
+        Ref: LambdaFunctionName
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt EventBridgeRule.Arn
