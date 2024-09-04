@@ -13,33 +13,30 @@ Job is configured to extract samples for a 30min time window, so scheduled trigg
 
 ### Policies
 
-Lamba requires following policies:
-
-![policies](docs/policies.png)
+See policies defined in [cloud formation template](deployment/cloud-formation-template/deployment.yaml)
 
 ### Configuration parameters
 
 | Parameter | Description |
 | --------- | ----------- |
-| /sitewise-importer/iot/api-key  | IoT API key |
-| /sitewise-importer/iot/api-secret | IoT API secret |
-| /sitewise-importer/iot/org-id    | (optiona) organization id |
-| /sitewise-importer/iot/filter/tags    | (optional) tags filtering. Syntax: tag=value,tag2=value2   |
+| /arduino/sitewise-importer/iot/api-key  | IoT API key |
+| /arduino/sitewise-importer/iot/api-secret | IoT API secret |
+| /arduino/sitewise-importer/iot/org-id    | (optional) organization id |
+| /arduino/sitewise-importer/iot/filter/tags    | (optional) tags filtering. Syntax: tag=value,tag2=value2  |
+| /iot/samples-resolution-seconds  | (optional) samples resolution (default: 300s) |
 
-## Deployment steps
+## Deployment via Cloud Formation Template
 
+It is possible to deploy required resources via [cloud formation template](deployment/cloud-formation-template/deployment.yaml)
 Required steps to deploy project:
-* create a new role for lamba function. See above for required policies.
 * compile lambda
 ```console
 foo@bar:~$ ./compile-lambda.sh
-sitewise-aligner.zip archive created
+arduino-sitewise-integration-lambda.zip archive created
 ```
-* Create a new lambda function based on Amazon Linux (suitable to execute golang code). As code, use sitewise-aligner.zip file created by above script.
-* Create SSM parameters described above and configure them properly
-* Create a new scheduled event from EventBridge
-  
-![scheduled events](docs/eventbridge.png)
+* Save zip file on an S3 bucket accessible by the AWS account
+* Start creation of a new cloud formation stack provising the [cloud formation template](deployment/cloud-formation-template/deployment.yaml)
+* Fill all required parameters (mandatory: Arduino API key and secret, S3 bucket and key where code has been uploaded. Optionally, tag filter for filtering things, organization identifier and samples resolution)
 
 ## Import historical data with a batch job
 

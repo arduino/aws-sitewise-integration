@@ -75,9 +75,22 @@ Resources:
                 Action:
                   - iotsitewise:BatchPutAssetPropertyValue
                   - iotsitewise:DescribeAsset
+                  - iotsitewise:DescribeAssetModel
+                  - iotsitewise:DescribeAssetProperty
                   - iotsitewise:GetAssetPropertyValue
                   - iotsitewise:ListAssetModels
+                  - iotsitewise:ListAssetModelProperties
+                  - iotsitewise:ListAssetProperties
+                  - iotsitewise:ListAssetRelationships
+                  - iotsitewise:ListAssociatedAssets
+                  - iotsitewise:ListTimeSeries
+                  - iotsitewise:UpdateAsset
+                  - iotsitewise:UpdateAssetModel
                   - iotsitewise:ListAssets
+                  - iotsitewise:AssociateAssets
+                  - iotsitewise:AssociateTimeSeriesToAssetProperty
+                  - iotsitewise:CreateAsset
+                  - iotsitewise:CreateAssetModel
                 Resource: '*'
 
   # Lambda Function
