@@ -147,6 +147,9 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 			batched, retry, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
 		}
 		if !retry {
+			// This is due to a rate limit on the IoT API, we need to wait a bit before retrying
+			a.logger.Infof("Rate limit reached for thing %s. Waiting 1 second before retrying.\n", thingID)
+			time.Sleep(1 * time.Second)
 			break
 		}
 	}
