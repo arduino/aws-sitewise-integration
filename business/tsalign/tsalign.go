@@ -122,7 +122,7 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 	for _, prop := range describedAsset.AssetProperties {
 		for _, thingProperty := range thing.Properties {
 			if *prop.Name == thingProperty.Name {
-				a.logger.Infoln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
+				a.logger.Debugln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
 				propertiesToImport = append(propertiesToImport, thingProperty.Id)
 				propertiesToImportAliases[thingProperty.Id] = fmt.Sprintf("/%s/%s", thing.Name, *prop.Name)
 			}
@@ -201,7 +201,7 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 
 		chunks := partitionResults(response)
 		for _, c := range chunks {
-			a.logger.Infoln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
+			a.logger.Debugln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
 			erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, c.ts, c.values)
 			if erri != nil {
 				return err

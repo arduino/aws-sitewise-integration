@@ -94,6 +94,7 @@ Resources:
                   - iotsitewise:ListTimeSeries
                   - iotsitewise:UpdateAsset
                   - iotsitewise:UpdateAssetModel
+                  - iotsitewise:UpdateAssetProperty
                   - iotsitewise:ListAssets
                   - iotsitewise:AssociateAssets
                   - iotsitewise:AssociateTimeSeriesToAssetProperty
