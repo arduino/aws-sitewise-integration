@@ -106,7 +106,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub arduino-s3-csv-data-exporter-${AWS::StackName}
+      FunctionName: !Sub arduino-sitewise-importer-${AWS::StackName}
       Handler: bootstrap
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
