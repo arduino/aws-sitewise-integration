@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Arduino SiteWise data integration. For deployment and architectural details, see https://github.com/arduino/aws-sitewise-integration
+
+Parameters:
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket where the Lambda function code archive file is stored.
+
+  LambdaS3Key:
+    Type: String
+    Default: 'arduino-sitewise-integration-lambda.zip'
+    Description: S3 key for the Lambda function archive file.
+
+  IotApiKey:
+    Type: String
+    Description: Arduino API Key.
+
+  IotApiSecret:
+    Type: String
+    Description: Arduino API Secret.
+    NoEcho: true
+
+  IotOrgId:
+    Type: String
+    Default: '<empty>'
+    Description: Arduino Organization ID (optional).
+
+  TagFilter:
+    Type: String
+    Default: '<empty>'
+    Description: Filter things to import by tag (optional). Format> tag1=value1,tag2=value2
+
+  Resolution:
+      Type: String
+      Description: "Samples resolution data extraction resolution. 'raw' and '1 minute' are not supported for '1 day' scheduling"
+      AllowedValues:
+        - 1 minute
+        - 5 minutes
+        - 15 minutes
+        - 1 hour
+      Default: 5 minutes
+
+  ExecutionScheduling:
+      Type: String
+      Description: "Choose the execution scheduling for the data export"
+      AllowedValues:
+        - 5 minutes
+        - 15 minutes
+        - 1 hour
+      Default: 15 minutes
+
+Resources:
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: arn:aws:ssm:*:*:parameter/arduino/sitewise-importer/*
+              - Effect: Allow
+                Action:
+                  - iotsitewise:BatchPutAssetPropertyValue
+                  - iotsitewise:DescribeAsset
+                  - iotsitewise:DescribeAssetModel
+                  - iotsitewise:DescribeAssetProperty
+                  - iotsitewise:GetAssetPropertyValue
+                  - iotsitewise:ListAssetModels
+                  - iotsitewise:ListAssetModelProperties
+                  - iotsitewise:ListAssetProperties
+                  - iotsitewise:ListAssetRelationships
+                  - iotsitewise:ListAssociatedAssets
+                  - iotsitewise:ListTimeSeries
+                  - iotsitewise:UpdateAsset
+                  - iotsitewise:UpdateAssetModel
+                  - iotsitewise:UpdateAssetProperty
+                  - iotsitewise:ListAssets
+                  - iotsitewise:AssociateAssets
+                  - iotsitewise:AssociateTimeSeriesToAssetProperty
+                  - iotsitewise:CreateAsset
+                  - iotsitewise:CreateAssetModel
+                Resource: '*'
+
+  # Lambda Function
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub arduino-sitewise-importer-${AWS::StackName}
+      Handler: bootstrap
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket:
+          Ref: LambdaS3Bucket
+        S3Key:
+          Ref: LambdaS3Key
+      Runtime: provided.al2
+      Timeout: 900
+      MemorySize: 256
+      Environment:
+        Variables:
+          STACK_NAME: !Sub ${AWS::StackName}
+
+  # Parameters in Parameter Store
+  ApiKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/api-key
+      Type: String
+      Value:
+        Ref: IotApiKey
+      Tier: Standard
+
+  ApiSecretParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/api-secret
+      Type: String
+      Value:
+        Ref: IotApiSecret
+      Tier: Standard
+
+  OrgIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/org-id
+      Type: String
+      Value:
+        Ref: IotOrgId
+      Tier: Standard
+
+  FilterTagsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/filter/tags
+      Type: String
+      Value:
+        Ref: TagFilter
+      Tier: Standard
+
+  ResolutionParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/samples-resolution
+      Type: String
+      Value:
+        Ref: Resolution
+      Tier: Standard
+
+  ExecutionSchedulingParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/scheduling
+      Type: String
+      Value:
+        Ref: ExecutionScheduling
+      Tier: Standard
+
+  # EventBridge Rule to trigger Lambda every hour
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression:
+        Fn::Sub: "rate(${ExecutionScheduling})"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: LambdaTarget
+      State: ENABLED
+
+  # Permission for EventBridge to invoke Lambda
+  LambdaPermissionForEventBridge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub arduino-sitewise-importer-${AWS::StackName}
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventBridgeRule.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the deployed Lambda function.
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Description: ARN of the IAM role associated with the Lambda function.
+    Value: !GetAtt LambdaExecutionRole.Arn

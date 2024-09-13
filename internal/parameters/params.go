@@ -17,11 +17,14 @@ package parameters
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
+
+const StackName = "<stack-name>"
 
 type ParametersClient struct {
 	ssmcl *ssm.Client
@@ -46,7 +49,12 @@ func New() (*ParametersClient, error) {
 	}, nil
 }
 
-func (c *ParametersClient) ReadConfig(param string) (*string, error) {
+func (c *ParametersClient) ResolveParameter(param, stack string) string {
+	return strings.ReplaceAll(param, StackName, stack)
+}
+
+func (c *ParametersClient) ReadConfig(param, stack string) (*string, error) {
+	param = c.ResolveParameter(param, stack)
 	value, err := c.ssmcl.GetParameter(context.Background(), &ssm.GetParameterInput{
 		Name:           aws.String(param),
 		WithDecryption: aws.Bool(true),
@@ -54,5 +62,10 @@ func (c *ParametersClient) ReadConfig(param string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return value.Parameter.Value, nil
+	paramValue := value.Parameter.Value
+	if paramValue == nil || *paramValue == "<empty>" {
+		defaultValue := ""
+		return &defaultValue, nil
+	}
+	return paramValue, nil
 }

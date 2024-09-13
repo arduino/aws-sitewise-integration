@@ -1,6 +1,6 @@
 #!/bin/bash
 
 GOOS=linux CGO_ENABLED=0 go build -o bootstrap -tags lambda.norpc lambda.go
-zip sitewise-aligner.zip bootstrap
+zip arduino-sitewise-integration-lambda.zip bootstrap
 rm bootstrap
-echo "sitewise-aligner.zip archive created"
+echo "arduino-sitewise-integration-lambda.zip archive created"

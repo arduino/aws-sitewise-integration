@@ -18,18 +18,23 @@ package tsalign
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"crypto/rand"
+	"math/big"
+
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
-	iotclient "github.com/arduino/iot-client-go"
+	iotclient "github.com/arduino/iot-client-go/v2"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
 	"github.com/sirupsen/logrus"
 )
 
-const importConcurrency = 5
+const importConcurrency = 10
+const retryCount = 5
 
 type TsAligner struct {
 	sitewisecl *sitewiseclient.IotSiteWiseClient
@@ -68,6 +73,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 				if asset.ExternalId == nil {
 					continue
 				}
+				// Asset external id is mapped on Thing ID
 				thing, ok := thingsMap[*asset.ExternalId]
 				if !ok {
 					a.logger.Warn("Thing not found: ", *asset.ExternalId)
@@ -89,7 +95,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 					propertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
-					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, propertiesToImport, propertiesToImportAliases, resolution)
+					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution)
 					if err != nil {
 						a.logger.Error("Error populating time series data: ", err)
 						return
@@ -116,7 +122,7 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 	for _, prop := range describedAsset.AssetProperties {
 		for _, thingProperty := range thing.Properties {
 			if *prop.Name == thingProperty.Name {
-				a.logger.Infoln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
+				a.logger.Debugln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
 				propertiesToImport = append(propertiesToImport, thingProperty.Id)
 				propertiesToImportAliases[thingProperty.Id] = fmt.Sprintf("/%s/%s", thing.Name, *prop.Name)
 			}
@@ -125,16 +131,55 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 	return propertiesToImport, propertiesToImportAliases
 }
 
+func computeTimeAlignment(resolutionSeconds, timeWindowInMinutes int) (time.Time, time.Time) {
+	// Compute time alignment
+	if resolutionSeconds <= 60 {
+		resolutionSeconds = 300 // Align to 5 minutes
+	}
+	to := time.Now().Truncate(time.Duration(resolutionSeconds) * time.Second).UTC()
+	from := to.Add(-time.Duration(timeWindowInMinutes) * time.Minute)
+	return from, to
+}
+
+func randomRateLimitingSleep() {
+	// Random sleep to avoid rate limiting (1s + random(0-500ms))
+	n, err := rand.Int(rand.Reader, big.NewInt(500))
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	randomSleep := n.Int64() + 1000
+	time.Sleep(time.Duration(randomSleep) * time.Millisecond)
+}
+
 func (a *TsAligner) populateTSDataIntoSiteWise(
 	ctx context.Context,
-	loopMinutes int,
+	timeWindowInMinutes int,
+	thingID string,
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
 	resolution int) error {
 
-	to := time.Now().UTC()
-	from := to.Add(-time.Duration(loopMinutes) * time.Minute)
-	batched, err := a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+	// Truncate time to given resolution
+	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+
+	var batched *iotclient.ArduinoSeriesBatch
+	var err error
+	var retry bool
+	for i := 0; i < retryCount; i++ {
+		if thingID != "" {
+			batched, retry, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
+		} else {
+			batched, retry, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
+		}
+		if !retry {
+			break
+		} else {
+			// This is due to a rate limit on the IoT API, we need to wait a bit before retrying
+			a.logger.Infof("Rate limit reached for thing %s. Waiting before retrying.\n", thingID)
+			randomRateLimitingSleep()
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -142,23 +187,56 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		if response.CountValues == 0 {
 			continue
 		}
-		ts := make([]int64, 0, response.CountValues)
-		for _, t := range response.Times {
-			ts = append(ts, t.Unix())
+
+		propertyID := strings.Replace(response.Query, "property.", "", 1)
+		if !slices.Contains(propertiesToImport, propertyID) {
+			a.logger.Infof("Not mapped property %s. Skipping import.\n", propertyID)
+			continue
 		}
-		property := strings.Replace(response.Query, "property.", "", 1)
-		alias := propertiesToImportAliases[property]
-		a.logger.Infoln("  Importing ", len(ts), " data points for: ", alias, " - ts:", joinTs(ts))
+		alias := propertiesToImportAliases[propertyID]
 		if alias == "" {
 			a.logger.Warn("Alias not found. Skipping import.")
 			continue
 		}
-		erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, ts, response.Values)
-		if erri != nil {
-			return err
+
+		chunks := partitionResults(response)
+		for _, c := range chunks {
+			a.logger.Debugln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
+			erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, c.ts, c.values)
+			if erri != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+type chunk struct {
+	ts     []int64
+	values []float64
+}
+
+// To be coherent with SiteWise API, we need to partition the results in chunks of 10 elements
+func partitionResults(response iotclient.ArduinoSeriesResponse) []chunk {
+	chunks := []chunk{}
+	for i := 0; i < len(response.Times); i += 10 {
+		end := i + 10
+		if end > len(response.Times) {
+			end = len(response.Times)
+		}
+
+		times := response.Times[i:end]
+		unixTimes := make([]int64, len(times))
+		for j := 0; j < len(times); j++ {
+			unixTimes[j] = times[j].Unix()
+		}
+		c := chunk{
+			ts:     unixTimes,
+			values: response.Values[i:end],
+		}
+		chunks = append(chunks, c)
+	}
+	return chunks
 }
 
 func joinTs(ts []int64) string {

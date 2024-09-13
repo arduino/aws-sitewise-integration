@@ -19,8 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/antihax/optional"
-	iotclient "github.com/arduino/iot-client-go"
+	iotclient "github.com/arduino/iot-client-go/v2"
 	"golang.org/x/oauth2"
 )
 
@@ -52,17 +51,16 @@ func (cl *Client) DeviceList(ctx context.Context, tags map[string]string) ([]iot
 		return nil, err
 	}
 
-	opts := &iotclient.DevicesV2ListOpts{}
+	request := cl.api.DevicesV2Api.DevicesV2List(ctx)
 	if tags != nil {
 		t := make([]string, 0, len(tags))
 		for key, val := range tags {
 			// Use the 'key:value' format required from the backend
 			t = append(t, key+":"+val)
 		}
-		opts.Tags = optional.NewInterface(t)
+		request = request.Tags(t)
 	}
-
-	devices, _, err := cl.api.DevicesV2Api.DevicesV2List(ctx, opts)
+	devices, _, err := cl.api.DevicesV2Api.DevicesV2ListExecute(request)
 	if err != nil {
 		err = fmt.Errorf("listing devices: %w", errorDetail(err))
 		return nil, err
@@ -78,12 +76,13 @@ func (cl *Client) DeviceShow(ctx context.Context, id string) (*iotclient.Arduino
 		return nil, err
 	}
 
-	dev, _, err := cl.api.DevicesV2Api.DevicesV2Show(ctx, id, nil)
+	request := cl.api.DevicesV2Api.DevicesV2Show(ctx, id)
+	dev, _, err := cl.api.DevicesV2Api.DevicesV2ShowExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving device, %w", errorDetail(err))
 		return nil, err
 	}
-	return &dev, nil
+	return dev, nil
 }
 
 // DeviceTagsCreate allows to create or overwrite tags on a device of Arduino IoT Cloud.
@@ -95,7 +94,9 @@ func (cl *Client) DeviceTagsCreate(ctx context.Context, id string, tags map[stri
 
 	for key, val := range tags {
 		t := iotclient.Tag{Key: key, Value: val}
-		_, err := cl.api.DevicesV2TagsApi.DevicesV2TagsUpsert(ctx, id, t)
+		request := cl.api.DevicesV2TagsApi.DevicesV2TagsUpsert(ctx, id)
+		request = request.Tag(t)
+		_, err := cl.api.DevicesV2TagsApi.DevicesV2TagsUpsertExecute(request)
 		if err != nil {
 			err = fmt.Errorf("cannot create tag %s: %w", key, errorDetail(err))
 			return err
@@ -113,7 +114,8 @@ func (cl *Client) DeviceTagsDelete(ctx context.Context, id string, keys []string
 	}
 
 	for _, key := range keys {
-		_, err := cl.api.DevicesV2TagsApi.DevicesV2TagsDelete(ctx, id, key)
+		request := cl.api.DevicesV2TagsApi.DevicesV2TagsDelete(ctx, id, key)
+		_, err := cl.api.DevicesV2TagsApi.DevicesV2TagsDeleteExecute(request)
 		if err != nil {
 			err = fmt.Errorf("cannot delete tag %s: %w", key, errorDetail(err))
 			return err
@@ -130,12 +132,13 @@ func (cl *Client) ThingShow(ctx context.Context, id string) (*iotclient.ArduinoT
 		return nil, err
 	}
 
-	thing, _, err := cl.api.ThingsV2Api.ThingsV2Show(ctx, id, nil)
+	request := cl.api.ThingsV2Api.ThingsV2Show(ctx, id)
+	thing, _, err := cl.api.ThingsV2Api.ThingsV2ShowExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving thing, %w", errorDetail(err))
 		return nil, err
 	}
-	return &thing, nil
+	return thing, nil
 }
 
 // ThingList returns a list of things on Arduino IoT Cloud.
@@ -145,15 +148,15 @@ func (cl *Client) ThingList(ctx context.Context, ids []string, device *string, p
 		return nil, err
 	}
 
-	opts := &iotclient.ThingsV2ListOpts{}
-	opts.ShowProperties = optional.NewBool(props)
+	request := cl.api.ThingsV2Api.ThingsV2List(ctx)
+	request = request.ShowProperties(props)
 
 	if ids != nil {
-		opts.Ids = optional.NewInterface(ids)
+		request = request.Ids(ids)
 	}
 
 	if device != nil {
-		opts.DeviceId = optional.NewString(*device)
+		request = request.DeviceId(*device)
 	}
 
 	if tags != nil {
@@ -162,10 +165,10 @@ func (cl *Client) ThingList(ctx context.Context, ids []string, device *string, p
 			// Use the 'key:value' format required from the backend
 			t = append(t, key+":"+val)
 		}
-		opts.Tags = optional.NewInterface(t)
+		request = request.Tags(t)
 	}
 
-	things, _, err := cl.api.ThingsV2Api.ThingsV2List(ctx, opts)
+	things, _, err := cl.api.ThingsV2Api.ThingsV2ListExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving things, %w", errorDetail(err))
 		return nil, err
@@ -182,7 +185,8 @@ func (cl *Client) ThingTagsCreate(ctx context.Context, id string, tags map[strin
 
 	for key, val := range tags {
 		t := iotclient.Tag{Key: key, Value: val}
-		_, err := cl.api.ThingsV2TagsApi.ThingsV2TagsUpsert(ctx, id, t)
+		request := cl.api.ThingsV2TagsApi.ThingsV2TagsUpsert(ctx, id)
+		_, err := cl.api.ThingsV2TagsApi.ThingsV2TagsUpsertExecute(request.Tag(t))
 		if err != nil {
 			err = fmt.Errorf("cannot create tag %s: %w", key, errorDetail(err))
 			return err
@@ -200,7 +204,8 @@ func (cl *Client) ThingTagsDelete(ctx context.Context, id string, keys []string)
 	}
 
 	for _, key := range keys {
-		_, err := cl.api.ThingsV2TagsApi.ThingsV2TagsDelete(ctx, id, key)
+		request := cl.api.ThingsV2TagsApi.ThingsV2TagsDelete(ctx, id, key)
+		_, err := cl.api.ThingsV2TagsApi.ThingsV2TagsDeleteExecute(request)
 		if err != nil {
 			err = fmt.Errorf("cannot delete tag %s: %w", key, errorDetail(err))
 			return err
@@ -209,45 +214,14 @@ func (cl *Client) ThingTagsDelete(ctx context.Context, id string, keys []string)
 	return nil
 }
 
-// DashboardShow allows to retrieve a specific dashboard, given its id,
-// from Arduino IoT Cloud.
-func (cl *Client) DashboardShow(ctx context.Context, id string) (*iotclient.ArduinoDashboardv2, error) {
-	ctx, err := ctxWithToken(ctx, cl.token)
-	if err != nil {
-		return nil, err
-	}
-
-	dashboard, _, err := cl.api.DashboardsV2Api.DashboardsV2Show(ctx, id, nil)
-	if err != nil {
-		err = fmt.Errorf("retrieving dashboard, %w", errorDetail(err))
-		return nil, err
-	}
-	return &dashboard, nil
-}
-
-// DashboardList returns a list of dashboards on Arduino IoT Cloud.
-func (cl *Client) DashboardList(ctx context.Context) ([]iotclient.ArduinoDashboardv2, error) {
-	ctx, err := ctxWithToken(ctx, cl.token)
-	if err != nil {
-		return nil, err
-	}
-
-	dashboards, _, err := cl.api.DashboardsV2Api.DashboardsV2List(ctx, nil)
-	if err != nil {
-		err = fmt.Errorf("listing dashboards: %w", errorDetail(err))
-		return nil, err
-	}
-	return dashboards, nil
-}
-
-func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, error) {
+func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, bool, error) {
 	if len(properties) == 0 {
-		return nil, fmt.Errorf("no properties provided")
+		return nil, false, fmt.Errorf("no properties provided")
 	}
 
 	ctx, err := ctxWithToken(ctx, cl.token)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	requests := make([]iotclient.BatchQueryRequestMediaV1, 0, len(properties))
@@ -257,39 +231,89 @@ func (cl *Client) GetTimeSeries(ctx context.Context, properties []string, from, 
 		}
 		requests = append(requests, iotclient.BatchQueryRequestMediaV1{
 			From:     from,
-			Interval: interval,
+			Interval: &interval,
 			Q:        fmt.Sprintf("property.%s", prop),
 			To:       to,
 		})
 	}
 
 	if len(requests) == 0 {
-		return nil, fmt.Errorf("no valid properties provided")
+		return nil, false, fmt.Errorf("no valid properties provided")
 	}
 
 	batchQueryRequestsMediaV1 := iotclient.BatchQueryRequestsMediaV1{
 		Requests: requests,
 	}
 
-	ts, _, err := cl.api.SeriesV2Api.SeriesV2BatchQuery(ctx, batchQueryRequestsMediaV1)
+	request := cl.api.SeriesV2Api.SeriesV2BatchQuery(ctx)
+	request = request.BatchQueryRequestsMediaV1(batchQueryRequestsMediaV1)
+	ts, httpResponse, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
 	if err != nil {
 		err = fmt.Errorf("retrieving time series: %w", errorDetail(err))
-		return nil, err
+		if httpResponse != nil && httpResponse.StatusCode == 429 { // Retry if rate limited
+			return nil, true, err
+		}
+		return nil, false, err
 	}
-	return &ts, nil
+	return ts, false, nil
 }
 
-func (cl *Client) setup(client, secret, organization string) error {
+func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, bool, error) {
+	if thingID == "" {
+		return nil, false, fmt.Errorf("no thing provided")
+	}
+
+	ctx, err := ctxWithToken(ctx, cl.token)
+	if err != nil {
+		return nil, false, err
+	}
+
+	requests := []iotclient.BatchQueryRequestMediaV1{
+		{
+			From:     from,
+			Interval: &interval,
+			Q:        fmt.Sprintf("thing.%s", thingID),
+			To:       to,
+		},
+	}
+
+	if len(requests) == 0 {
+		return nil, false, fmt.Errorf("no valid properties provided")
+	}
+
+	batchQueryRequestsMediaV1 := iotclient.BatchQueryRequestsMediaV1{
+		Requests: requests,
+	}
+
+	request := cl.api.SeriesV2Api.SeriesV2BatchQuery(ctx)
+	request = request.BatchQueryRequestsMediaV1(batchQueryRequestsMediaV1)
+	ts, httpResponse, err := cl.api.SeriesV2Api.SeriesV2BatchQueryExecute(request)
+	if err != nil {
+		err = fmt.Errorf("retrieving time series: %w", errorDetail(err))
+		if httpResponse != nil && httpResponse.StatusCode == 429 { // Retry if rate limited
+			return nil, true, err
+		}
+		return nil, false, err
+	}
+	return ts, false, nil
+}
+
+func (cl *Client) setup(client, secret, organizationId string) error {
 	baseURL := GetArduinoAPIBaseURL()
 
 	// Configure a token source given the user's credentials.
-	cl.token = NewUserTokenSource(client, secret, baseURL)
+	cl.token = NewUserTokenSource(client, secret, baseURL, organizationId)
 
 	config := iotclient.NewConfiguration()
-	if organization != "" {
-		config.DefaultHeader = map[string]string{"X-Organization": organization}
+	if organizationId != "" {
+		config.AddDefaultHeader("X-Organization", organizationId)
 	}
-	config.BasePath = baseURL + "/iot"
+	config.Servers = iotclient.ServerConfigurations{
+		{
+			URL:         fmt.Sprintf("%s/iot", baseURL),
+			Description: "IoT API endpoint",
+		},
+	}
 	cl.api = iotclient.NewAPIClient(config)
 
 	return nil

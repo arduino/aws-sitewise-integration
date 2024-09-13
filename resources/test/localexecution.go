@@ -11,16 +11,20 @@ import (
 )
 
 const (
-	IoTApiKey                   = "/sitewise-importer/iot/api-key"
-	IoTApiSecret                = "/sitewise-importer/iot/api-secret"
-	IoTApiOrgId                 = "/sitewise-importer/iot/org-id"
-	IoTApiTags                  = "/sitewise-importer/iot/filter/tags"
-	SamplesResolutionSeconds    = 300
-	TimeExtractionWindowMinutes = 30
+	ArduinoPrefix                      = "/arduino/sitewise-importer/" + parameters.StackName
+	IoTApiKey                          = ArduinoPrefix + "/iot/api-key"
+	IoTApiSecret                       = ArduinoPrefix + "/iot/api-secret"
+	IoTApiOrgId                        = ArduinoPrefix + "/iot/org-id"
+	IoTApiTags                         = ArduinoPrefix + "/iot/filter/tags"
+	SamplesReso                        = ArduinoPrefix + "/iot/samples-resolution"
+	Scheduling                         = ArduinoPrefix + "/iot/scheduling"
+	SamplesResolutionSeconds           = 300
+	DefaultTimeExtractionWindowMinutes = 60
 )
 
 func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 
+	stack := os.Getenv("STACK_NAME")
 	logger := logrus.NewEntry(logrus.New())
 
 	var tags *string
@@ -30,15 +34,15 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	apikey, err := paramReader.ReadConfig(IoTApiKey)
+	apikey, err := paramReader.ReadConfig(IoTApiKey, stack)
 	if err != nil {
 		logger.Error("Error reading parameter "+IoTApiKey, err)
 	}
-	apiSecret, err := paramReader.ReadConfig(IoTApiSecret)
+	apiSecret, err := paramReader.ReadConfig(IoTApiSecret, stack)
 	if err != nil {
 		logger.Error("Error reading parameter "+IoTApiSecret, err)
 	}
-	origId, _ := paramReader.ReadConfig(IoTApiOrgId)
+	origId, _ := paramReader.ReadConfig(IoTApiOrgId, stack)
 	organizationId := ""
 	if origId != nil {
 		organizationId = *origId
@@ -46,7 +50,7 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 	if apikey == nil || apiSecret == nil {
 		return nil, errors.New("key and secret are required")
 	}
-	tagsParam, _ := paramReader.ReadConfig(IoTApiTags)
+	tagsParam, _ := paramReader.ReadConfig(IoTApiTags, stack)
 	if tagsParam != nil {
 		tags = tagsParam
 	}
@@ -63,7 +67,7 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 		logger.Infoln("tags:", *tags)
 	}
 
-	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
+	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, DefaultTimeExtractionWindowMinutes)
 	if err != nil {
 		return nil, err
 	}

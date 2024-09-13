@@ -31,17 +31,21 @@ type SiteWiseImportTrigger struct {
 }
 
 const (
-	IoTApiKey                   = "/sitewise-importer/iot/api-key"
-	IoTApiSecret                = "/sitewise-importer/iot/api-secret"
-	IoTApiOrgId                 = "/sitewise-importer/iot/org-id"
-	IoTApiTags                  = "/sitewise-importer/iot/filter/tags"
-	SamplesResolutionSeconds    = 300
-	TimeExtractionWindowMinutes = 30
+	ArduinoPrefix                      = "/arduino/sitewise-importer/" + parameters.StackName
+	IoTApiKey                          = ArduinoPrefix + "/iot/api-key"
+	IoTApiSecret                       = ArduinoPrefix + "/iot/api-secret"
+	IoTApiOrgId                        = ArduinoPrefix + "/iot/org-id"
+	IoTApiTags                         = ArduinoPrefix + "/iot/filter/tags"
+	SamplesReso                        = ArduinoPrefix + "/iot/samples-resolution"
+	Scheduling                         = ArduinoPrefix + "/iot/scheduling"
+	SamplesResolutionSeconds           = 300
+	DefaultTimeExtractionWindowMinutes = 60
 )
 
 func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, error) {
 
 	logger := logrus.NewEntry(logrus.New())
+	stack := os.Getenv("STACK_NAME")
 
 	var tags *string
 
@@ -50,15 +54,15 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	if err != nil {
 		return nil, err
 	}
-	apikey, err := paramReader.ReadConfig(IoTApiKey)
+	apikey, err := paramReader.ReadConfig(IoTApiKey, stack)
 	if err != nil {
-		logger.Error("Error reading parameter "+IoTApiKey, err)
+		logger.Error("Error reading parameter "+paramReader.ResolveParameter(IoTApiKey, stack), err)
 	}
-	apiSecret, err := paramReader.ReadConfig(IoTApiSecret)
+	apiSecret, err := paramReader.ReadConfig(IoTApiSecret, stack)
 	if err != nil {
-		logger.Error("Error reading parameter "+IoTApiSecret, err)
+		logger.Error("Error reading parameter "+paramReader.ResolveParameter(IoTApiSecret, stack), err)
 	}
-	origId, _ := paramReader.ReadConfig(IoTApiOrgId)
+	origId, _ := paramReader.ReadConfig(IoTApiOrgId, stack)
 	organizationId := ""
 	if origId != nil {
 		organizationId = *origId
@@ -66,30 +70,82 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	if apikey == nil || apiSecret == nil {
 		return nil, errors.New("key and secret are required")
 	}
-	tagsParam, _ := paramReader.ReadConfig(IoTApiTags)
+	tagsParam, _ := paramReader.ReadConfig(IoTApiTags, stack)
 	if tagsParam != nil {
 		tags = tagsParam
 	}
+	res, err := paramReader.ReadConfig(SamplesReso, stack)
+	if err != nil {
+		logger.Warn("Error reading parameter "+paramReader.ResolveParameter(SamplesReso, stack)+". Set resolution to default value", err)
+	}
+	resolution := int(SamplesResolutionSeconds)
+	switch *res {
+	case "1m":
+		resolution = 60
+	case "5m":
+		resolution = 300
+	case "15m":
+		resolution = 900
+	case "1h":
+		resolution = 3600
+	}
+	if resolution > 3600 {
+		logger.Errorf("Resolution %d is invalid", resolution)
+		return nil, errors.New("resolution must be between -1 and 3600")
+	}
+	if resolution < 60 || resolution > 3600 {
+		logger.Errorf("Resolution %d is invalid", resolution)
+		return nil, errors.New("resolution must be between 60 and 3600")
+	}
 
-	logger.Infoln("------ Running import...")
-	if event.Dev {
+	logger.Infoln("------ Running import. Stack:", stack)
+	if event.Dev || os.Getenv("DEV") == "true" {
 		logger.Infoln("Running in dev mode")
 		os.Setenv("IOT_API_URL", "https://api2.oniudra.cc")
 	}
 	logger.Infoln("key:", *apikey)
-	logger.Infoln("secret:", *apiSecret)
-	logger.Infoln("organization-id:", organizationId)
+	logger.Infoln("secret:", "*********")
+	if organizationId != "" {
+		logger.Infoln("organizationId:", organizationId)
+	} else {
+		logger.Infoln("organizationId: not set")
+	}
 	if tags != nil {
 		logger.Infoln("tags:", *tags)
 	}
+	// Resolve scheduling
+	extractionWindowMinutes, err := configureDataExtractionTimeWindow(logger, paramReader, stack)
+	if err != nil {
+		return nil, err
+	}
 
-	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, TimeExtractionWindowMinutes)
+	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, resolution, extractionWindowMinutes)
 	if err != nil {
 		return nil, err
 	}
 
 	message := "Data aligned and imported successfully"
 	return &message, nil
+}
+
+func configureDataExtractionTimeWindow(logger *logrus.Entry, paramReader *parameters.ParametersClient, stack string) (int, error) {
+	var schedule *string
+	var err error
+	schedule, err = paramReader.ReadConfig(Scheduling, stack)
+	if err != nil {
+		logger.Error("Error reading parameter "+paramReader.ResolveParameter(Scheduling, stack), err)
+		return -1, err
+	}
+	extractionWindowMinutes := DefaultTimeExtractionWindowMinutes
+	switch *schedule {
+	case "5 minutes":
+		extractionWindowMinutes = 5
+	case "15 minutes":
+		extractionWindowMinutes = 15
+	case "1 hour":
+		extractionWindowMinutes = 60
+	}
+	return extractionWindowMinutes, nil
 }
 
 func main() {
