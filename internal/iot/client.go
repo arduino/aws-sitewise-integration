@@ -298,15 +298,15 @@ func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from
 	return ts, false, nil
 }
 
-func (cl *Client) setup(client, secret, organization string) error {
+func (cl *Client) setup(client, secret, organizationId string) error {
 	baseURL := GetArduinoAPIBaseURL()
 
 	// Configure a token source given the user's credentials.
-	cl.token = NewUserTokenSource(client, secret, baseURL)
+	cl.token = NewUserTokenSource(client, secret, baseURL, organizationId)
 
 	config := iotclient.NewConfiguration()
-	if organization != "" {
-		config.AddDefaultHeader("X-Organization", organization)
+	if organizationId != "" {
+		config.AddDefaultHeader("X-Organization", organizationId)
 	}
 	config.Servers = iotclient.ServerConfigurations{
 		{

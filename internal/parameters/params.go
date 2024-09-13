@@ -17,12 +17,14 @@ package parameters
 
 import (
 	"context"
-	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
+
+const StackName = "<stack-name>"
 
 type ParametersClient struct {
 	ssmcl *ssm.Client
@@ -47,7 +49,12 @@ func New() (*ParametersClient, error) {
 	}, nil
 }
 
-func (c *ParametersClient) ReadConfig(param string) (*string, error) {
+func (c *ParametersClient) ResolveParameter(param, stack string) string {
+	return strings.ReplaceAll(param, StackName, stack)
+}
+
+func (c *ParametersClient) ReadConfig(param, stack string) (*string, error) {
+	param = c.ResolveParameter(param, stack)
 	value, err := c.ssmcl.GetParameter(context.Background(), &ssm.GetParameterInput{
 		Name:           aws.String(param),
 		WithDecryption: aws.Bool(true),
@@ -61,23 +68,4 @@ func (c *ParametersClient) ReadConfig(param string) (*string, error) {
 		return &defaultValue, nil
 	}
 	return paramValue, nil
-}
-
-func (c *ParametersClient) ReadIntConfig(param string) (*int, error) {
-	value, err := c.ssmcl.GetParameter(context.Background(), &ssm.GetParameterInput{
-		Name:           aws.String(param),
-		WithDecryption: aws.Bool(true),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if value.Parameter.Value == nil {
-		defaultValue := -1
-		return &defaultValue, nil
-	}
-	strconvValue, err := strconv.Atoi(*value.Parameter.Value)
-	if err != nil {
-		return nil, err
-	}
-	return &strconvValue, nil
 }

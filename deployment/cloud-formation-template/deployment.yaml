@@ -2,20 +2,15 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Arduino SiteWise data integration. For deployment and architectural details, see https://github.com/arduino/aws-sitewise-integration
 
 Parameters:
-  LambdaFunctionName:
-    Type: String
-    Default: 'cloud-formation-test-sitewise-importer-function'
-    Description: Name of the Lambda function.
-
   LambdaS3Bucket:
     Type: String
     Default: 'sitewiseimport-demo'
-    Description: S3 bucket where the Lambda function ZIP file is stored.
+    Description: S3 bucket where the Lambda function code archive file is stored.
 
   LambdaS3Key:
     Type: String
     Default: 'arduino-sitewise-integration-lambda.zip'
-    Description: S3 key for the Lambda function ZIP file.
+    Description: S3 key for the Lambda function archive file.
 
   IotApiKey:
     Type: String
@@ -37,9 +32,23 @@ Parameters:
     Description: Filter things to import by tag (optional). Format> tag1=value1,tag2=value2
 
   Resolution:
-    Type: Number
-    Default: 300
-    Description: Samples resolution in seconds. Default is 5 minutes (300s).
+      Type: String
+      Description: "Samples resolution data extraction resolution. 'raw' and '1 minute' are not supported for '1 day' scheduling"
+      AllowedValues:
+        - 1 minute
+        - 5 minutes
+        - 15 minutes
+        - 1 hour
+      Default: 5 minutes
+
+  ExecutionScheduling:
+      Type: String
+      Description: "Choose the execution scheduling for the data export"
+      AllowedValues:
+        - 5 minutes
+        - 15 minutes
+        - 1 hour
+      Default: 15 minutes
 
 Resources:
 
@@ -97,8 +106,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName:
-        Ref: LambdaFunctionName
+      FunctionName: !Sub arduino-s3-csv-data-exporter-${AWS::StackName}
       Handler: bootstrap
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
@@ -109,12 +117,15 @@ Resources:
       Runtime: provided.al2
       Timeout: 900
       MemorySize: 256
+      Environment:
+        Variables:
+          STACK_NAME: !Sub ${AWS::StackName}
 
   # Parameters in Parameter Store
   ApiKeyParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /arduino/sitewise-importer/iot/api-key
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/api-key
       Type: String
       Value:
         Ref: IotApiKey
@@ -123,7 +134,7 @@ Resources:
   ApiSecretParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /arduino/sitewise-importer/iot/api-secret
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/api-secret
       Type: String
       Value:
         Ref: IotApiSecret
@@ -132,7 +143,7 @@ Resources:
   OrgIdParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /arduino/sitewise-importer/iot/org-id
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/org-id
       Type: String
       Value:
         Ref: IotOrgId
@@ -141,7 +152,7 @@ Resources:
   FilterTagsParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /arduino/sitewise-importer/iot/filter/tags
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/filter/tags
       Type: String
       Value:
         Ref: TagFilter
@@ -150,17 +161,27 @@ Resources:
   ResolutionParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: /arduino/sitewise-importer/iot/samples-resolution-seconds
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/samples-resolution
       Type: String
       Value:
         Ref: Resolution
+      Tier: Standard
+
+  ExecutionSchedulingParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /arduino/sitewise-importer/${AWS::StackName}/iot/scheduling
+      Type: String
+      Value:
+        Ref: ExecutionScheduling
       Tier: Standard
 
   # EventBridge Rule to trigger Lambda every hour
   EventBridgeRule:
     Type: AWS::Events::Rule
     Properties:
-      ScheduleExpression: cron(10 * * * ? *)
+      ScheduleExpression:
+        Fn::Sub: "rate(${ExecutionScheduling})"
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
           Id: LambdaTarget
