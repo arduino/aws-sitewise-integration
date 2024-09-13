@@ -4,7 +4,6 @@ Description: Arduino SiteWise data integration. For deployment and architectural
 Parameters:
   LambdaS3Bucket:
     Type: String
-    Default: 'sitewiseimport-demo'
     Description: S3 bucket where the Lambda function code archive file is stored.
 
   LambdaS3Key:
@@ -191,8 +190,7 @@ Resources:
   LambdaPermissionForEventBridge:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName:
-        Ref: LambdaFunctionName
+      FunctionName: !Sub arduino-sitewise-importer-${AWS::StackName}
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt EventBridgeRule.Arn
