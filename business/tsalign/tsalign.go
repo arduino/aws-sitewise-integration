@@ -23,6 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"crypto/rand"
+	"math/big"
+
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	iotclient "github.com/arduino/iot-client-go/v2"
@@ -31,6 +34,7 @@ import (
 )
 
 const importConcurrency = 10
+const retryCount = 5
 
 type TsAligner struct {
 	sitewisecl *sitewiseclient.IotSiteWiseClient
@@ -127,20 +131,42 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 	return propertiesToImport, propertiesToImportAliases
 }
 
+func computeTimeAlignment(resolutionSeconds, timeWindowInMinutes int) (time.Time, time.Time) {
+	// Compute time alignment
+	if resolutionSeconds <= 60 {
+		resolutionSeconds = 300 // Align to 5 minutes
+	}
+	to := time.Now().Truncate(time.Duration(resolutionSeconds) * time.Second).UTC()
+	from := to.Add(-time.Duration(timeWindowInMinutes) * time.Minute)
+	return from, to
+}
+
+func randomRateLimitingSleep() {
+	// Random sleep to avoid rate limiting (1s + random(0-500ms))
+	n, err := rand.Int(rand.Reader, big.NewInt(500))
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	randomSleep := n.Int64() + 1000
+	time.Sleep(time.Duration(randomSleep) * time.Millisecond)
+}
+
 func (a *TsAligner) populateTSDataIntoSiteWise(
 	ctx context.Context,
-	loopMinutes int,
+	timeWindowInMinutes int,
 	thingID string,
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
 	resolution int) error {
 
-	to := time.Now().Truncate(time.Hour).UTC()
-	from := to.Add(-time.Duration(loopMinutes) * time.Minute)
+	// Truncate time to given resolution
+	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+
 	var batched *iotclient.ArduinoSeriesBatch
 	var err error
 	var retry bool
-	for i := 0; i < 3; i++ {
+	for i := 0; i < retryCount; i++ {
 		if thingID != "" {
 			batched, retry, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
 		} else {
@@ -150,8 +176,8 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 			break
 		} else {
 			// This is due to a rate limit on the IoT API, we need to wait a bit before retrying
-			a.logger.Infof("Rate limit reached for thing %s. Waiting 1 second before retrying.\n", thingID)
-			time.Sleep(1 * time.Second)
+			a.logger.Infof("Rate limit reached for thing %s. Waiting before retrying.\n", thingID)
+			randomRateLimitingSleep()
 		}
 	}
 	if err != nil {
