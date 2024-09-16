@@ -94,13 +94,24 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 						return
 					}
 
-					propertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
+					propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
-					err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution)
-					if err != nil {
-						a.logger.Error("Error populating time series data: ", err)
-						return
+					if len(propertiesToImport) > 0 {
+						err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution)
+						if err != nil {
+							a.logger.Error("Error populating time series data: ", err)
+							return
+						}
 					}
+
+					if len(charPropertiesToImport) > 0 {
+						err = a.populateCharTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution)
+						if err != nil {
+							a.logger.Error("Error populating string based time series data: ", err)
+							return
+						}
+					}
+
 				}(*asset.Id, *asset.Name)
 			}
 
@@ -117,19 +128,24 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	return nil
 }
 
-func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) ([]string, map[string]string) {
-	propertiesToImport := make([]string, 0, len(describedAsset.AssetProperties))
+func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) ([]string, []string, map[string]string) {
+	propertiesToImport := []string{}
+	charPropertiesToImport := []string{}
 	propertiesToImportAliases := make(map[string]string, len(describedAsset.AssetProperties))
 	for _, prop := range describedAsset.AssetProperties {
 		for _, thingProperty := range thing.Properties {
 			if *prop.Name == thingProperty.Name {
 				a.logger.Debugln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
-				propertiesToImport = append(propertiesToImport, thingProperty.Id)
+				if iot.IsPropertyString(thingProperty.Type) {
+					charPropertiesToImport = append(charPropertiesToImport, thingProperty.Id)
+				} else {
+					propertiesToImport = append(propertiesToImport, thingProperty.Id)
+				}
 				propertiesToImportAliases[thingProperty.Id] = fmt.Sprintf("/%s/%s", thing.Name, *prop.Name)
 			}
 		}
 	}
-	return propertiesToImport, propertiesToImportAliases
+	return propertiesToImport, charPropertiesToImport, propertiesToImportAliases
 }
 
 func computeTimeAlignment(resolutionSeconds, timeWindowInMinutes int) (time.Time, time.Time) {
@@ -168,11 +184,7 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 	var err error
 	var retry bool
 	for i := 0; i < retryCount; i++ {
-		if thingID != "" {
-			batched, retry, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
-		} else {
-			batched, retry, err = a.iotcl.GetTimeSeries(ctx, propertiesToImport, from, to, int64(resolution))
-		}
+		batched, retry, err = a.iotcl.GetTimeSeriesByThing(ctx, thingID, from, to, int64(resolution))
 		if !retry {
 			break
 		} else {
@@ -191,7 +203,7 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
 		if !slices.Contains(propertiesToImport, propertyID) {
-			a.logger.Infof("Not mapped property %s. Skipping import.\n", propertyID)
+			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
 		}
 		alias := propertiesToImportAliases[propertyID]
@@ -246,4 +258,88 @@ func joinTs(ts []int64) string {
 		tsarr = append(tsarr, fmt.Sprintf("%d", v))
 	}
 	return strings.Join(tsarr, ",")
+}
+
+func (a *TsAligner) populateCharTSDataIntoSiteWise(
+	ctx context.Context,
+	timeWindowInMinutes int,
+	thingID string,
+	propertiesToImport []string,
+	propertiesToImportAliases map[string]string,
+	resolution int) error {
+
+	// Truncate time to given resolution
+	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+
+	var batched *iotclient.ArduinoSeriesBatchSampled
+	var err error
+	var retry bool
+	for i := 0; i < retryCount; i++ {
+		// ctx context.Context, propertiesToImport []string, from, to time.Time, interval int32
+		batched, retry, err = a.iotcl.GetTimeSeriesSampling(ctx, propertiesToImport, from, to, int32(resolution))
+		if !retry {
+			break
+		} else {
+			// This is due to a rate limit on the IoT API, we need to wait a bit before retrying
+			a.logger.Infof("Rate limit reached for thing %s. Waiting before retrying.\n", thingID)
+			randomRateLimitingSleep()
+		}
+	}
+	if err != nil {
+		return err
+	}
+	for _, response := range batched.Responses {
+		if response.CountValues == 0 {
+			continue
+		}
+
+		propertyID := response.Query
+		if !slices.Contains(propertiesToImport, propertyID) {
+			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
+			continue
+		}
+		alias := propertiesToImportAliases[propertyID]
+		if alias == "" {
+			a.logger.Warn("Alias not found. Skipping import.")
+			continue
+		}
+
+		chunks := partitionSampledResults(response)
+		for _, c := range chunks {
+			a.logger.Debugln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
+			erri := a.sitewisecl.PopulateSampledSamplesTimeSeriesByAlias(ctx, alias, c.ts, c.values)
+			if erri != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+type chunkChars struct {
+	ts     []int64
+	values []any
+}
+
+// To be coherent with SiteWise API, we need to partition the results in chunks of 10 elements
+func partitionSampledResults(response iotclient.ArduinoSeriesSampledResponse) []chunkChars {
+	chunks := []chunkChars{}
+	for i := 0; i < len(response.Times); i += 10 {
+		end := i + 10
+		if end > len(response.Times) {
+			end = len(response.Times)
+		}
+
+		times := response.Times[i:end]
+		unixTimes := make([]int64, len(times))
+		for j := 0; j < len(times); j++ {
+			unixTimes[j] = times[j].Unix()
+		}
+		c := chunkChars{
+			ts:     unixTimes,
+			values: response.Values[i:end],
+		}
+		chunks = append(chunks, c)
+	}
+	return chunks
 }

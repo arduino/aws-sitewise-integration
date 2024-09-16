@@ -298,6 +298,45 @@ func (cl *Client) GetTimeSeriesByThing(ctx context.Context, thingID string, from
 	return ts, false, nil
 }
 
+func (cl *Client) GetTimeSeriesSampling(ctx context.Context, propertiesToImport []string, from, to time.Time, interval int32) (*iotclient.ArduinoSeriesBatchSampled, bool, error) {
+
+	ctx, err := ctxWithToken(ctx, cl.token)
+	if err != nil {
+		return nil, false, err
+	}
+
+	requests := []iotclient.BatchQuerySampledRequestMediaV1{}
+
+	for _, propId := range propertiesToImport {
+		requests = append(requests, iotclient.BatchQuerySampledRequestMediaV1{
+			From:     &from,
+			Interval: &interval,
+			Q:        fmt.Sprintf("property.%s", propId),
+			To:       &to,
+		})
+	}
+
+	if len(requests) == 0 {
+		return nil, false, fmt.Errorf("no valid properties provided")
+	}
+
+	batchQueryRequestsMediaV1 := iotclient.BatchQuerySampledRequestsMediaV1{
+		Requests: requests,
+	}
+
+	request := cl.api.SeriesV2Api.SeriesV2BatchQuerySampling(ctx)
+	request = request.BatchQuerySampledRequestsMediaV1(batchQueryRequestsMediaV1)
+	ts, httpResponse, err := cl.api.SeriesV2Api.SeriesV2BatchQuerySamplingExecute(request)
+	if err != nil {
+		err = fmt.Errorf("retrieving time series: %w", errorDetail(err))
+		if httpResponse != nil && httpResponse.StatusCode == 429 { // Retry if rate limited
+			return nil, true, err
+		}
+		return nil, false, err
+	}
+	return ts, false, nil
+}
+
 func (cl *Client) setup(client, secret, organizationId string) error {
 	baseURL := GetArduinoAPIBaseURL()
 

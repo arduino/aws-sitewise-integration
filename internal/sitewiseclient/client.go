@@ -18,14 +18,16 @@ package sitewiseclient
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/utils"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise/types"
 	"github.com/sirupsen/logrus"
@@ -146,9 +148,7 @@ func (c *IotSiteWiseClient) GetBulkImportJobStatus(ctx context.Context, jobId *s
 func mapType(ptype string) types.PropertyDataType {
 	ptype = strings.ToUpper(ptype)
 
-	if iot.IsPropertyBool(ptype) {
-		return types.PropertyDataTypeBoolean
-	} else if iot.IsPropertyNumberType(ptype) {
+	if iot.IsPropertyNumberType(ptype) || iot.IsPropertyBool(ptype) {
 		return types.PropertyDataTypeDouble
 	} else if iot.IsPropertyString(ptype) || iot.IsPropertyLocation(ptype) {
 		return types.PropertyDataTypeString
@@ -262,10 +262,6 @@ func (c *IotSiteWiseClient) UpdateAssetProperty(ctx context.Context, assetId str
 }
 
 func (c *IotSiteWiseClient) PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error {
-	return c.populateTimeSeriesImpl(ctx, "", "", propertyAlias, ts, values)
-}
-
-func (c *IotSiteWiseClient) populateTimeSeriesImpl(ctx context.Context, assetId, propertyId, propertyAlias string, ts []int64, values []float64) error {
 	if len(ts) != len(values) {
 		return fmt.Errorf("timestamps and values must have the same length")
 	}
@@ -288,20 +284,12 @@ func (c *IotSiteWiseClient) populateTimeSeriesImpl(ctx context.Context, assetId,
 		})
 	}
 
-	if propertyAlias == "" {
-		data = append(data, types.PutAssetPropertyValueEntry{
-			EntryId:        &entry,
-			AssetId:        &assetId,
-			PropertyId:     &propertyId,
-			PropertyValues: pvalues,
-		})
-	} else {
-		data = append(data, types.PutAssetPropertyValueEntry{
-			EntryId:        &entry,
-			PropertyAlias:  &propertyAlias,
-			PropertyValues: pvalues,
-		})
-	}
+	data = append(data, types.PutAssetPropertyValueEntry{
+		EntryId:        &entry,
+		PropertyAlias:  &propertyAlias,
+		PropertyValues: pvalues,
+	})
+
 	out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
 		Entries: data,
 	})
@@ -314,6 +302,82 @@ func (c *IotSiteWiseClient) populateTimeSeriesImpl(ctx context.Context, assetId,
 			if entry.Errors != nil {
 				for _, err := range entry.Errors {
 					c.logger.Error("		[Error] ", err.ErrorCode, *err.ErrorMessage)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func interfaceToString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func (c *IotSiteWiseClient) PopulateSampledSamplesTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []any) error {
+	if len(ts) != len(values) {
+		return fmt.Errorf("timestamps and values must have the same length")
+	}
+	if len(ts) == 0 {
+		return fmt.Errorf("no data to populate")
+	}
+	var data []types.PutAssetPropertyValueEntry
+	var pvalues []types.AssetPropertyValue
+	entry := "1"
+
+	for i := 0; i < len(ts); i++ {
+		variant := types.Variant{}
+
+		switch v := values[i].(type) {
+		case string:
+			variant.StringValue = &v
+		case int:
+			valInt32 := int32(v)
+			variant.IntegerValue = &valInt32
+		case float64:
+			variant.DoubleValue = &v
+		default:
+			c.logger.Warn("Unsupported type: ", reflect.TypeOf(v))
+			continue
+		}
+
+		pvalues = append(pvalues, types.AssetPropertyValue{
+			Timestamp: &types.TimeInNanos{
+				TimeInSeconds: &ts[i],
+			},
+			Value:   &variant,
+			Quality: types.QualityGood,
+		})
+	}
+
+	data = append(data, types.PutAssetPropertyValueEntry{
+		EntryId:        &entry,
+		PropertyAlias:  &propertyAlias,
+		PropertyValues: pvalues,
+	})
+
+	out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+		Entries: data,
+	})
+	if err != nil {
+		return err
+	}
+	if out.ErrorEntries != nil {
+		for _, entry := range out.ErrorEntries {
+			c.logger.Error("Error on entry: ", *entry.EntryId)
+			if entry.Errors != nil {
+				for _, err := range entry.Errors {
+					c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
 				}
 			}
 		}
