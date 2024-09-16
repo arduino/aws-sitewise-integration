@@ -71,6 +71,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 			for _, asset := range assets.AssetSummaries {
 				if asset.ExternalId == nil {
+					a.logger.Warn("Asset external id not found, skipping it: ", *asset.Name)
 					continue
 				}
 				// Asset external id is mapped on Thing ID

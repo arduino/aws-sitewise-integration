@@ -24,6 +24,8 @@ import (
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/utils"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise/types"
 	"github.com/sirupsen/logrus"
@@ -36,6 +38,12 @@ type IotSiteWiseClient struct {
 
 func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	awsOpts := []func(*config.LoadOptions) error{}
+
+	config.WithRetryer(func() aws.Retryer {
+		return retry.NewStandard(func(o *retry.StandardOptions) {
+			o.MaxAttempts = 5
+		})
+	})
 
 	cfg, err := config.LoadDefaultConfig(
 		context.Background(),
@@ -62,6 +70,12 @@ func (c *IotSiteWiseClient) ListAssetModels(ctx context.Context, nextToken *stri
 
 func (c *IotSiteWiseClient) DescribeAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DescribeAssetModelOutput, error) {
 	return c.svc.DescribeAssetModel(ctx, &iotsitewise.DescribeAssetModelInput{
+		AssetModelId: assetModelId,
+	})
+}
+
+func (c *IotSiteWiseClient) DeleteAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DeleteAssetModelOutput, error) {
+	return c.svc.DeleteAssetModel(ctx, &iotsitewise.DeleteAssetModelInput{
 		AssetModelId: assetModelId,
 	})
 }
@@ -134,9 +148,7 @@ func mapType(ptype string) types.PropertyDataType {
 
 	if iot.IsPropertyBool(ptype) {
 		return types.PropertyDataTypeBoolean
-	} else if iot.IsPropertyInt(ptype) {
-		return types.PropertyDataTypeInteger
-	} else if iot.IsPropertyFloat(ptype) {
+	} else if iot.IsPropertyNumberType(ptype) {
 		return types.PropertyDataTypeDouble
 	} else if iot.IsPropertyString(ptype) || iot.IsPropertyLocation(ptype) {
 		return types.PropertyDataTypeString
@@ -247,10 +259,6 @@ func (c *IotSiteWiseClient) UpdateAssetProperty(ctx context.Context, assetId str
 		}
 	}
 	return nil
-}
-
-func (c *IotSiteWiseClient) PopulateTimeSeries(ctx context.Context, assetId string, propertyId string, ts []int64, values []float64) error {
-	return c.populateTimeSeriesImpl(ctx, assetId, propertyId, "", ts, values)
 }
 
 func (c *IotSiteWiseClient) PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error {
