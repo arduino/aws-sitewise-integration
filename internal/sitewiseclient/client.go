@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/utils"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iotsitewise"
@@ -130,19 +131,18 @@ func (c *IotSiteWiseClient) GetBulkImportJobStatus(ctx context.Context, jobId *s
 
 func mapType(ptype string) types.PropertyDataType {
 	ptype = strings.ToUpper(ptype)
-	if strings.HasPrefix(ptype, "TEMPERATURE") || strings.HasPrefix(ptype, "PERCENTAGE") {
-		return types.PropertyDataTypeDouble
-	}
-	switch ptype {
-	case "BOOL", "BOOLEAN":
+
+	if iot.IsPropertyBool(ptype) {
 		return types.PropertyDataTypeBoolean
-	case "INT":
+	} else if iot.IsPropertyInt(ptype) {
 		return types.PropertyDataTypeInteger
-	case "FLOAT", "TEMPERATURE", "DOUBLE", "VOLT", "WATT":
+	} else if iot.IsPropertyFloat(ptype) {
 		return types.PropertyDataTypeDouble
-	default:
+	} else if iot.IsPropertyString(ptype) || iot.IsPropertyLocation(ptype) {
 		return types.PropertyDataTypeString
 	}
+
+	return types.PropertyDataTypeString
 }
 
 func (c *IotSiteWiseClient) CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error) {

@@ -80,8 +80,8 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 					continue
 				}
 
-				wg.Add(1)
 				tokens <- struct{}{}
+				wg.Add(1)
 
 				go func(assetId string, assetName string) {
 					defer func() { <-tokens }()
