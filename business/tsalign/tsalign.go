@@ -293,7 +293,7 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 			continue
 		}
 
-		propertyID := response.Query
+		propertyID := strings.Replace(response.Query, "property.", "", 1)
 		if !slices.Contains(propertiesToImport, propertyID) {
 			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
