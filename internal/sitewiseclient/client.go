@@ -17,6 +17,7 @@ package sitewiseclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -319,6 +320,12 @@ func interfaceToString(value interface{}) string {
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	case bool:
 		return strconv.FormatBool(v)
+	case map[string]any:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(encoded)		
 	default:
 		return fmt.Sprintf("%v", v)
 	}
@@ -346,6 +353,9 @@ func (c *IotSiteWiseClient) PopulateSampledSamplesTimeSeriesByAlias(ctx context.
 			variant.IntegerValue = &valInt32
 		case float64:
 			variant.DoubleValue = &v
+		case map[string]any:
+			encoded := interfaceToString(v)
+			variant.StringValue = &encoded		
 		default:
 			c.logger.Warn("Unsupported type: ", reflect.TypeOf(v))
 			continue

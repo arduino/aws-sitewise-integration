@@ -29,15 +29,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.ArduinoThing, sitewisecl *sitewiseclient.IotSiteWiseClient) error {
+func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.ArduinoThing, sitewisecl *sitewiseclient.IotSiteWiseClient) []error {
 	logger.Infoln("=====> Aligning entities")
 	models, err := getSiteWiseModels(ctx, logger, sitewisecl)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 	assets, err := getSiteWiseAssets(ctx, logger, sitewisecl, models)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 
 	logger.Infoln("Discovered models:")
@@ -70,7 +70,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 						logger.Infoln("  Model already exists with the same name, retry")
 						continue
 					}
-					return err
+					return []error{err}
 				}
 				// If model is created, exit the loop
 				break
@@ -86,6 +86,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	// All models are created, now create assets. These can be done in parallel.
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, 5)
+	errorChannel := make(chan error, len(things))
 
 	for _, thing := range things {
 		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
@@ -127,6 +128,8 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 				assetObj, err := sitewisecl.CreateAsset(ctx, thing.Name, modelIdentifier, thing.Id)
 				if err != nil {
 					logger.Errorln("Error creating asset for thing: ", thing.Id, thing.Name, err)
+					errorChannel <- err
+					return
 				}
 				assetId = assetObj.AssetId
 	
@@ -137,12 +140,27 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 			err = sitewisecl.UpdateAssetProperty(ctx, *assetId, propsAliasMap)
 			if err != nil {
 				logger.Errorln("Error updating asset properties for thing: ", thing.Id, thing.Name, err)
+				errorChannel <- err
 			}
 		}(*modelId)
 	}
 
+	logger.Infoln("=====> Wait for tasks completion...")
 	// Wait for all assets to be created
 	wg.Wait()
+	close(errorChannel)
+
+	logger.Infoln("=====> Check for errors...")
+	// Check if there were errors
+	errorsToReturn := []error{}
+	for err := range errorChannel {
+		if err != nil {
+			errorsToReturn = append(errorsToReturn, err)
+		}
+	}
+	if len(errorsToReturn) > 0 {
+		return errorsToReturn
+	}
 
 	return nil
 }

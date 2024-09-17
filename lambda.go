@@ -80,13 +80,13 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	}
 	resolution := int(SamplesResolutionSeconds)
 	switch *res {
-	case "1m":
+	case "1 minute":
 		resolution = 60
-	case "5m":
+	case "5 minutes":
 		resolution = 300
-	case "15m":
+	case "15 minutes":
 		resolution = 900
-	case "1h":
+	case "1 hour":
 		resolution = 3600
 	}
 	if resolution > 3600 {
@@ -119,9 +119,12 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		return nil, err
 	}
 
-	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, resolution, extractionWindowMinutes)
-	if err != nil {
-		return nil, err
+	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, resolution, extractionWindowMinutes)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			logger.Error(err)
+		}
+		return nil, errs[0]
 	}
 
 	message := "Data aligned and imported successfully"
