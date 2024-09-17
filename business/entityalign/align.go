@@ -77,9 +77,9 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 					logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
 					return []error{err}
 				}
-				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id, ". Wait for model to be active...")
+				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id, " - wait for model to be active...")
 				sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 10)
-				models[key] = descModel.AssetModelId
+				models[thingKey] = descModel.AssetModelId
 			}
 			continue
 		} else {
