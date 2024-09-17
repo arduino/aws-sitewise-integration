@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	iotclient "github.com/arduino/iot-client-go/v2"
@@ -41,24 +42,21 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 
 	logger.Infoln("Discovered models:")
 	for k, v := range models {
-		logger.Infoln("Model ["+*v.Id+"] - key:", k)
+		logger.Infoln("Model ["+*v+"] - key:", k)
 	}
 
+	// Understand if there are models to create
 	for _, thing := range things {
-		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
-		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
-			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
 			propsTypeMap[prop.Name] = prop.Type
 		}
 
-		key := buildModelKeyFromMap(propsAliasMap)
+		key := buildModelKeyFromMap(propsTypeMap)
 		logger.Infoln("Searching for model with key: ", key)
 
 		// Discover thing properties
-		model, ok := models[key]
-		var modelId *string
+		_, ok := models[key]
 		if !ok {
 			logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
 			var createdModel *iotsitewise.CreateAssetModelOutput
@@ -80,35 +78,71 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 
 			logger.Infof("Wait for model [%s] to be active...\n", modelName)
 			sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 10)
-			modelId = createdModel.AssetModelId
-		} else {
-			modelId = model.Id
-		}
-
-		var assetId *string
-		asset, ok := assets[thing.Id]
-		if ok {
-			logger.Infoln("Thing is already aligned, skipping creation. ID: ", thing.Id)
-			assetId = &asset
-		} else {
-			// Create asset
-			logger.Infoln("Creating asset for thing: ", thing.Id)
-			assetObj, err := sitewisecl.CreateAsset(ctx, thing.Name, *modelId, thing.Id)
-			if err != nil {
-				return err
-			}
-			assetId = assetObj.AssetId
-
-			// Wait for asset to be active before updating properties...
-			sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
-		}
-
-		err = sitewisecl.UpdateAssetProperty(ctx, *assetId, propsAliasMap)
-		if err != nil {
-			return err
+			models[key] = createdModel.AssetModelId
 		}
 
 	}
+
+	// All models are created, now create assets. These can be done in parallel.
+	var wg sync.WaitGroup
+	tokens := make(chan struct{}, 5)
+
+	for _, thing := range things {
+		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
+		propsAliasMap := make(map[string]string, len(thing.Properties))
+		propsTypeMap := make(map[string]string, len(thing.Properties))
+		for _, prop := range thing.Properties {
+			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
+			propsTypeMap[prop.Name] = prop.Type
+		}
+
+		key := buildModelKeyFromMap(propsTypeMap)
+		logger.Infoln("Searching for model with key: ", key)
+
+		// Discover thing properties
+		model, ok := models[key]
+		var modelId *string
+		if !ok {
+			logger.Errorln("Model not found for thing: ", thing.Id, thing.Name, ". Skipping.")
+			continue
+		} else {
+			modelId = model
+		}
+
+		tokens <- struct{}{}
+		wg.Add(1)
+
+		go func(modelIdentifier string) {
+			defer func() { <-tokens }()
+			defer wg.Done()
+
+			var assetId *string
+			asset, ok := assets[thing.Id]
+			if ok {
+				logger.Infoln("Thing is already aligned, skipping creation. ID: ", thing.Id)
+				assetId = &asset
+			} else {
+				// Create asset
+				logger.Infoln("Creating asset for thing: ", thing.Id)
+				assetObj, err := sitewisecl.CreateAsset(ctx, thing.Name, modelIdentifier, thing.Id)
+				if err != nil {
+					logger.Errorln("Error creating asset for thing: ", thing.Id, thing.Name, err)
+				}
+				assetId = assetObj.AssetId
+	
+				// Wait for asset to be active before updating properties...
+				sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
+			}
+
+			err = sitewisecl.UpdateAssetProperty(ctx, *assetId, propsAliasMap)
+			if err != nil {
+				logger.Errorln("Error updating asset properties for thing: ", thing.Id, thing.Name, err)
+			}
+		}(*modelId)
+	}
+
+	// Wait for all assets to be created
+	wg.Wait()
 
 	return nil
 }
@@ -125,14 +159,14 @@ func propertyAlias(thingName, propertyName string) string {
 	return fmt.Sprintf("/%s/%s", thingName, propertyName)
 }
 
-func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*types.AssetModelSummary) (map[string]string, error) {
+func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*string) (map[string]string, error) {
 	discoveredAssets := make(map[string]string)
 	logger.Infoln("=====> Get SiteWise assets")
-	for _, model := range models {
+	for _, modelId := range models {
 		next := true
 		var token *string
 		for next {
-			assets, err := sitewisecl.ListAssets(ctx, model.Id, token)
+			assets, err := sitewisecl.ListAssets(ctx, modelId, token)
 			if err != nil {
 				return nil, err
 			}
@@ -153,8 +187,8 @@ func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 	return discoveredAssets, nil
 }
 
-func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*types.AssetModelSummary, error) {
-	discoveredModels := make(map[string]*types.AssetModelSummary)
+func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*string, error) {
+	discoveredModels := make(map[string]*string)
 	logger.Infoln("=====> Get SiteWise models")
 	next := true
 	var token *string
@@ -184,7 +218,7 @@ func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 					}
 				}
 				if len(props) > 0 {
-					discoveredModels[buildModelKey(props)] = &model
+					discoveredModels[buildModelKey(props)] = model.Id
 				}
 			}
 		}
