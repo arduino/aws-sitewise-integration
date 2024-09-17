@@ -119,6 +119,9 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		return nil, err
 	}
 
+	logger.Infoln("resolution seconds:", resolution)
+	logger.Infoln("time window minutes:", extractionWindowMinutes)
+
 	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, resolution, extractionWindowMinutes)
 	if len(errs) > 0 {
 		for _, err := range errs {

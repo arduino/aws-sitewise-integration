@@ -44,7 +44,6 @@ Parameters:
       Type: String
       Description: "Choose the execution scheduling for the data export"
       AllowedValues:
-        - 15 minutes
         - 30 minutes
         - 1 hour
       Default: 30 minutes

@@ -31,7 +31,8 @@ import (
 
 func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.ArduinoThing, sitewisecl *sitewiseclient.IotSiteWiseClient) []error {
 	logger.Infoln("=====> Aligning entities")
-	models, err := getSiteWiseModels(ctx, logger, sitewisecl)
+	thingsMap := toThingMap(things)
+	models, modelDefinitions, err := getSiteWiseModels(ctx, logger, sitewisecl)
 	if err != nil {
 		return []error{err}
 	}
@@ -40,7 +41,55 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		return []error{err}
 	}
 
-	// Align models
+	logger.Infoln("Discovered models:")
+	for k, v := range models {
+		logger.Infoln("  Model ["+*v+"] - key:", k)
+	}
+
+	// Align model assests with things for new properties added
+	logger.Infoln("=====> Aligning already created models with things")
+	for _, asset := range assets {
+		logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
+		// Get associated thing
+		thing, ok := thingsMap[asset.thingId]
+		if !ok {
+			logger.Debugln("Thing not found for asset: ", asset.assetId, ". Skipping.")
+			continue
+		}
+		thingKey := buildModelKeyFromThing(thing)
+
+		// Get model key from associated model
+		descModel, ok := modelDefinitions[asset.modelId]
+		if !ok {
+			logger.Debugln("Model not found for asset: ", asset.assetId, ". Skipping.")
+			continue
+		}
+		if len(descModel.AssetModelProperties) > 0 {
+			key, ok := buildModelKeyFromModel(descModel)
+			if !ok {
+				continue
+			}
+			// Check if model key is the same as thing key
+			if key != thingKey && thingKey != "" && key != "" {
+				logger.Warnln("Model and thing are not aligned. Model(key): ", key, " - Thing(key): ", thingKey)
+				err := sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing))
+				if err != nil {
+					logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
+					return []error{err}
+				}
+				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id, " - wait for model to be active...")
+				sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 10)
+				models[thingKey] = descModel.AssetModelId
+			}
+			continue
+		} else {
+			logger.Warnln("Model has no properties, skipping.")
+			continue
+		}
+	}
+
+	// Align not discovered models
+	logger.Infoln("=====> Create newly discovred models")
 	models, errs := alignModels(ctx, sitewisecl, logger, things, models)
 	if len(errs) > 0 {
 		return errs
@@ -51,8 +100,8 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	tokens := make(chan struct{}, 5)
 	errorChannel := make(chan error, len(things))
 
+	logger.Infoln("=====> Aligning and create assets")
 	for _, thing := range things {
-		logger.Infoln("=====> Aligning thing: ", thing.Id, thing.Name)
 		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
@@ -61,7 +110,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		}
 
 		key := buildModelKeyFromMap(propsTypeMap)
-		logger.Infoln("Searching for model with key: ", key)
+		logger.Infoln("=====> Aligning thing: ", thing.Id, " - name: ", thing.Name, " - model key: ", key)
 
 		// Discover thing properties
 		model, ok := models[key]
@@ -83,8 +132,8 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 			var assetId *string
 			asset, ok := assets[thing.Id]
 			if ok {
-				logger.Infoln("Thing is already aligned, skipping creation. ID: ", thing.Id)
-				assetId = &asset
+				logger.Debugln("Thing is already aligned, skipping creation. ID: ", thing.Id)
+				assetId = &asset.assetId
 			} else {
 				// Create asset
 				logger.Infoln("Creating asset for thing: ", thing.Id)
@@ -95,12 +144,12 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 					return
 				}
 				assetId = assetObj.AssetId
-	
+
 				// Wait for asset to be active before updating properties...
 				sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
 			}
 
-			err = sitewisecl.UpdateAssetProperty(ctx, *assetId, propsAliasMap)
+			err = sitewisecl.UpdateAssetProperties(ctx, *assetId, propsAliasMap)
 			if err != nil {
 				logger.Errorln("Error updating asset properties for thing: ", thing.Id, thing.Name, err)
 				errorChannel <- err
@@ -129,11 +178,6 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 }
 
 func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClient, logger *logrus.Entry, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
-	logger.Infoln("Discovered models:")
-	for k, v := range models {
-		logger.Infoln("Model ["+*v+"] - key:", k)
-	}
-
 	// Understand if there are models to create
 	for _, thing := range things {
 		propsTypeMap := make(map[string]string, len(thing.Properties))
@@ -142,7 +186,7 @@ func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClie
 		}
 
 		key := buildModelKeyFromMap(propsTypeMap)
-		logger.Infoln("Searching for model with key: ", key)
+		logger.Debugln("Searching for model with key: ", key)
 
 		// Discover thing properties
 		_, ok := models[key]
@@ -151,7 +195,7 @@ func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClie
 			var createdModel *iotsitewise.CreateAssetModelOutput
 			var err error
 			var modelName string
-			for i:=0; i<100; i++ {
+			for i := 0; i < 100; i++ {
 				modelName = composeModelName(thing.Name, i)
 				createdModel, err = sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
 				if err != nil {
@@ -188,8 +232,14 @@ func PropertyAlias(thingId, propertyName string) string {
 	return fmt.Sprintf("/%s/%s", thingId, propertyName)
 }
 
-func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*string) (map[string]string, error) {
-	discoveredAssets := make(map[string]string)
+type assetDefintion struct {
+	assetId string
+	modelId string
+	thingId string
+}
+
+func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*string) (map[string]assetDefintion, error) {
+	discoveredAssets := make(map[string]assetDefintion)
 	logger.Infoln("=====> Get SiteWise assets")
 	for _, modelId := range models {
 		next := true
@@ -208,7 +258,11 @@ func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 			// Discover assets. Keep only the one with externalId. ExternalId is mapped to thingId
 			for _, asset := range assets.AssetSummaries {
 				if asset.ExternalId != nil {
-					discoveredAssets[*asset.ExternalId] = *asset.Id
+					discoveredAssets[*asset.ExternalId] = assetDefintion{
+						assetId: *asset.Id,
+						modelId: *modelId,
+						thingId: *asset.ExternalId,
+					}
 				}
 			}
 		}
@@ -216,15 +270,16 @@ func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 	return discoveredAssets, nil
 }
 
-func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*string, error) {
+func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient) (map[string]*string, map[string]*iotsitewise.DescribeAssetModelOutput, error) {
 	discoveredModels := make(map[string]*string)
+	modelDefinitions := make(map[string]*iotsitewise.DescribeAssetModelOutput)
 	logger.Infoln("=====> Get SiteWise models")
 	next := true
 	var token *string
 	for next {
 		models, err := sitewisecl.ListAssetModels(ctx, token)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if models.NextToken == nil {
 			next = false
@@ -236,23 +291,32 @@ func getSiteWiseModels(ctx context.Context, logger *logrus.Entry, sitewisecl *si
 		for _, model := range models.AssetModelSummaries {
 			descModel, err := sitewisecl.DescribeAssetModel(ctx, model.Id)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+			modelDefinitions[*model.Id] = descModel
 
 			if len(descModel.AssetModelProperties) > 0 {
-				props := make([]string, 0, len(descModel.AssetModelProperties))
-				for _, prop := range descModel.AssetModelProperties {
-					if prop.Type != nil && *prop.Name != "" && prop.Type.Measurement != nil { // Check if property is a measurement, not an aggregate
-						props = append(props, *prop.Name)
-					}
-				}
-				if len(props) > 0 {
-					discoveredModels[buildModelKey(props)] = model.Id
+				key, ok := buildModelKeyFromModel(descModel)
+				if ok {
+					discoveredModels[key] = model.Id
 				}
 			}
 		}
 	}
-	return discoveredModels, nil
+	return discoveredModels, modelDefinitions, nil
+}
+
+func buildModelKeyFromModel(descModel *iotsitewise.DescribeAssetModelOutput) (string, bool) {
+	props := make([]string, 0, len(descModel.AssetModelProperties))
+	for _, prop := range descModel.AssetModelProperties {
+		if prop.Type != nil && *prop.Name != "" && prop.Type.Measurement != nil { // Check if property is a measurement, not an aggregate
+			props = append(props, *prop.Name)
+		}
+	}
+	if len(props) > 0 {
+		return buildModelKey(props), true
+	}
+	return "", false
 }
 
 func buildModelKey(props []string) string {
@@ -269,4 +333,25 @@ func buildModelKeyFromMap(propMap map[string]string) string {
 	}
 	slices.Sort(props)
 	return strings.Join(props, ",")
+}
+
+func buildModelKeyFromThing(thing iotclient.ArduinoThing) string {
+	propsTypeMap := thingPropertiesMap(thing)
+	return buildModelKeyFromMap(propsTypeMap)
+}
+
+func toThingMap(things []iotclient.ArduinoThing) map[string]iotclient.ArduinoThing {
+	thingMap := make(map[string]iotclient.ArduinoThing, len(things))
+	for _, thing := range things {
+		thingMap[thing.Id] = thing
+	}
+	return thingMap
+}
+
+func thingPropertiesMap(thing iotclient.ArduinoThing) map[string]string {
+	props := make(map[string]string, len(thing.Properties))
+	for _, prop := range thing.Properties {
+		props[prop.Name] = prop.Type
+	}
+	return props
 }
