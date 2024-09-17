@@ -56,7 +56,9 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, importConcurrency)
 
-	a.logger.Infoln("=====> Align perf data - last ", timeWindowInMinutes, " minutes")
+	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+
+	a.logger.Infoln("=====> Align perf data - time window ", timeWindowInMinutes, " minutes - from ", from, " to ", to, " - resolution ", resolution, " seconds")
 	models, err := a.sitewisecl.ListAssetModels(ctx, nil)
 	if err != nil {
 		return err
@@ -98,7 +100,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 					propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
 					if len(propertiesToImport) > 0 {
-						err = a.populateTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution)
+						err = a.populateTSDataIntoSiteWise(ctx, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating time series data: ", err)
 							return
@@ -106,7 +108,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 					}
 
 					if len(charPropertiesToImport) > 0 {
-						err = a.populateCharTSDataIntoSiteWise(ctx, timeWindowInMinutes, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution)
+						err = a.populateCharTSDataIntoSiteWise(ctx, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating string based time series data: ", err)
 							return
@@ -176,14 +178,11 @@ func randomRateLimitingSleep() {
 
 func (a *TsAligner) populateTSDataIntoSiteWise(
 	ctx context.Context,
-	timeWindowInMinutes int,
 	thingID string,
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
-	resolution int) error {
-
-	// Truncate time to given resolution
-	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+	resolution int,
+	from, to time.Time) error {
 
 	var batched *iotclient.ArduinoSeriesBatch
 	var err error
@@ -267,14 +266,11 @@ func joinTs(ts []int64) string {
 
 func (a *TsAligner) populateCharTSDataIntoSiteWise(
 	ctx context.Context,
-	timeWindowInMinutes int,
 	thingID string,
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
-	resolution int) error {
-
-	// Truncate time to given resolution
-	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
+	resolution int,
+	from, to time.Time) error {
 
 	var batched *iotclient.ArduinoSeriesBatchSampled
 	var err error
