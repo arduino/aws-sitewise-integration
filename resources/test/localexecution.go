@@ -67,9 +67,12 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 		logger.Infoln("tags:", *tags)
 	}
 
-	err = align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, DefaultTimeExtractionWindowMinutes)
-	if err != nil {
-		return nil, err
+	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, DefaultTimeExtractionWindowMinutes)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			logger.Error(err)
+		}
+		return nil, errs[0]
 	}
 
 	message := "Data aligned and imported successfully"
