@@ -199,7 +199,7 @@ func (c *IotSiteWiseClient) PollForModelActiveStatus(ctx context.Context, modelI
 		if c.IsModelActive(ctx, model) {
 			return true
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 	return false
 }
@@ -228,7 +228,7 @@ func (c *IotSiteWiseClient) PollForAssetActiveStatus(ctx context.Context, assetI
 		if c.IsAssetActive(ctx, asset) {
 			return true
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 	return false
 }

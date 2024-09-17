@@ -40,47 +40,10 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		return []error{err}
 	}
 
-	logger.Infoln("Discovered models:")
-	for k, v := range models {
-		logger.Infoln("Model ["+*v+"] - key:", k)
-	}
-
-	// Understand if there are models to create
-	for _, thing := range things {
-		propsTypeMap := make(map[string]string, len(thing.Properties))
-		for _, prop := range thing.Properties {
-			propsTypeMap[prop.Name] = prop.Type
-		}
-
-		key := buildModelKeyFromMap(propsTypeMap)
-		logger.Infoln("Searching for model with key: ", key)
-
-		// Discover thing properties
-		_, ok := models[key]
-		if !ok {
-			logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
-			var createdModel *iotsitewise.CreateAssetModelOutput
-			var modelName string
-			for i:=0; i<100; i++ {
-				modelName = composeModelName(thing.Name, i)
-				createdModel, err = sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
-				if err != nil {
-					var errConflicc *types.ResourceAlreadyExistsException
-					if errors.As(err, &errConflicc) {
-						logger.Infoln("  Model already exists with the same name, retry")
-						continue
-					}
-					return []error{err}
-				}
-				// If model is created, exit the loop
-				break
-			}
-
-			logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 10)
-			models[key] = createdModel.AssetModelId
-		}
-
+	// Align models
+	models, errs := alignModels(ctx, sitewisecl, logger, things, models)
+	if len(errs) > 0 {
+		return errs
 	}
 
 	// All models are created, now create assets. These can be done in parallel.
@@ -163,6 +126,54 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	}
 
 	return nil
+}
+
+func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClient, logger *logrus.Entry, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
+	logger.Infoln("Discovered models:")
+	for k, v := range models {
+		logger.Infoln("Model ["+*v+"] - key:", k)
+	}
+
+	// Understand if there are models to create
+	for _, thing := range things {
+		propsTypeMap := make(map[string]string, len(thing.Properties))
+		for _, prop := range thing.Properties {
+			propsTypeMap[prop.Name] = prop.Type
+		}
+
+		key := buildModelKeyFromMap(propsTypeMap)
+		logger.Infoln("Searching for model with key: ", key)
+
+		// Discover thing properties
+		_, ok := models[key]
+		if !ok {
+			logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
+			var createdModel *iotsitewise.CreateAssetModelOutput
+			var err error
+			var modelName string
+			for i:=0; i<100; i++ {
+				modelName = composeModelName(thing.Name, i)
+				createdModel, err = sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
+				if err != nil {
+					var errConflicc *types.ResourceAlreadyExistsException
+					if errors.As(err, &errConflicc) {
+						logger.Infoln("  Model already exists with the same name, retry")
+						continue
+					}
+					return models, []error{err}
+				}
+				// If model is created, exit the loop
+				break
+			}
+
+			logger.Infof("Wait for model [%s] to be active...\n", modelName)
+			sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 10)
+			models[key] = createdModel.AssetModelId
+		}
+
+	}
+
+	return models, nil
 }
 
 func composeModelName(thingName string, increment int) string {
