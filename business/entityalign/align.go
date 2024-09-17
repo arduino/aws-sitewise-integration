@@ -186,7 +186,7 @@ func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClie
 		}
 
 		key := buildModelKeyFromMap(propsTypeMap)
-		logger.Infoln("Searching for model with key: ", key)
+		logger.Debugln("Searching for model with key: ", key)
 
 		// Discover thing properties
 		_, ok := models[key]
