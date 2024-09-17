@@ -92,7 +92,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
-			propsAliasMap[prop.Name] = propertyAlias(thing.Name, prop.Name)
+			propsAliasMap[prop.Name] = PropertyAlias(thing.Id, prop.Name)
 			propsTypeMap[prop.Name] = prop.Type
 		}
 
@@ -155,8 +155,8 @@ func composeModelName(thingName string, increment int) string {
 	}
 }
 
-func propertyAlias(thingName, propertyName string) string {
-	return fmt.Sprintf("/%s/%s", thingName, propertyName)
+func PropertyAlias(thingId, propertyName string) string {
+	return fmt.Sprintf("/%s/%s", thingId, propertyName)
 }
 
 func getSiteWiseAssets(ctx context.Context, logger *logrus.Entry, sitewisecl *sitewiseclient.IotSiteWiseClient, models map[string]*string) (map[string]string, error) {

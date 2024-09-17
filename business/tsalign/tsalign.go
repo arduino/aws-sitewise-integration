@@ -26,6 +26,7 @@ import (
 	"crypto/rand"
 	"math/big"
 
+	"github.com/arduino/aws-sitewise-integration/business/entityalign"
 	"github.com/arduino/aws-sitewise-integration/internal/iot"
 	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	iotclient "github.com/arduino/iot-client-go/v2"
@@ -141,7 +142,7 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 				} else {
 					propertiesToImport = append(propertiesToImport, thingProperty.Id)
 				}
-				propertiesToImportAliases[thingProperty.Id] = fmt.Sprintf("/%s/%s", thing.Name, *prop.Name)
+				propertiesToImportAliases[thingProperty.Id] = entityalign.PropertyAlias(thing.Id, *prop.Name)
 			}
 		}
 	}
