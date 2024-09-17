@@ -41,6 +41,11 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		return []error{err}
 	}
 
+	logger.Infoln("Discovered models:")
+	for k, v := range models {
+		logger.Infoln("  Model ["+*v+"] - key:", k)
+	}
+
 	// Align model assests with things for new properties added
 	for _, asset := range assets {
 		logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
@@ -71,6 +76,8 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 					logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
 					return []error{err}
 				}
+				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id)
+				models[key] = descModel.AssetModelId
 			}
 			continue
 		} else {
@@ -167,11 +174,6 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 }
 
 func alignModels(ctx context.Context, sitewisecl *sitewiseclient.IotSiteWiseClient, logger *logrus.Entry, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
-	logger.Infoln("Discovered models:")
-	for k, v := range models {
-		logger.Infoln("Model ["+*v+"] - key:", k)
-	}
-
 	// Understand if there are models to create
 	for _, thing := range things {
 		propsTypeMap := make(map[string]string, len(thing.Properties))
