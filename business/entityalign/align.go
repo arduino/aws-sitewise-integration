@@ -76,7 +76,8 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 					logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
 					return []error{err}
 				}
-				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id)
+				logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", key, " - thing: ", thing.Id, ". Wait for model to be active...")
+				sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 10)
 				models[key] = descModel.AssetModelId
 			}
 			continue
@@ -86,7 +87,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 		}
 	}
 
-	// Align models
+	// Align not discovered models
 	models, errs := alignModels(ctx, sitewisecl, logger, things, models)
 	if len(errs) > 0 {
 		return errs
@@ -128,7 +129,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 			var assetId *string
 			asset, ok := assets[thing.Id]
 			if ok {
-				logger.Infoln("Thing is already aligned, skipping creation. ID: ", thing.Id)
+				logger.Debugln("Thing is already aligned, skipping creation. ID: ", thing.Id)
 				assetId = &asset.assetId
 			} else {
 				// Create asset
