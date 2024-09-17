@@ -47,6 +47,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	}
 
 	// Align model assests with things for new properties added
+	logger.Infoln("=====> Aligning already created models with things")
 	for _, asset := range assets {
 		logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
 		// Get associated thing
@@ -69,7 +70,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 				continue
 			}
 			// Check if model key is the same as thing key
-			if key != thingKey {
+			if key != thingKey && thingKey != "" && key != "" {
 				logger.Warnln("Model and thing are not aligned. Model(key): ", key, " - Thing(key): ", thingKey)
 				err := sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing))
 				if err != nil {
@@ -88,6 +89,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	}
 
 	// Align not discovered models
+	logger.Infoln("=====> Create newly discovred models")
 	models, errs := alignModels(ctx, sitewisecl, logger, things, models)
 	if len(errs) > 0 {
 		return errs
@@ -98,6 +100,7 @@ func Align(ctx context.Context, logger *logrus.Entry, things []iotclient.Arduino
 	tokens := make(chan struct{}, 5)
 	errorChannel := make(chan error, len(things))
 
+	logger.Infoln("=====> Aligning and create assets")
 	for _, thing := range things {
 		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))
