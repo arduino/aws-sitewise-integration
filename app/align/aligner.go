@@ -27,16 +27,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) error {
+func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) []error {
 
 	// Init clients
 	sitewisecl, err := sitewiseclient.New(logger)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 	iotcl, err := iot.NewClient(key, secret, orgid)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 
 	if tagsF == nil {
@@ -46,7 +46,7 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	}
 	things, err := iotcl.ThingList(ctx, nil, nil, true, utils.ParseTags(tagsF))
 	if err != nil {
-		return err
+		return []error{err}
 	}
 	thingsMap := make(map[string]iotclient.ArduinoThing, len(things))
 	for _, thing := range things {
@@ -55,9 +55,9 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	}
 
 	if alignEntities {
-		err = entityalign.Align(ctx, logger, things, sitewisecl)
-		if err != nil {
-			return err
+		errs := entityalign.Align(ctx, logger, things, sitewisecl)
+		if errs != nil {
+			return errs
 		}
 	}
 

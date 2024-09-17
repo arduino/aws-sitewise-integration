@@ -5,8 +5,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/arduino/aws-sitewise-integration/app/align"
 	"github.com/arduino/aws-sitewise-integration/internal/parameters"
+	"github.com/arduino/aws-sitewise-integration/internal/sitewiseclient"
 	"github.com/sirupsen/logrus"
 )
 
@@ -67,12 +67,18 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 		logger.Infoln("tags:", *tags)
 	}
 
-	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, SamplesResolutionSeconds, DefaultTimeExtractionWindowMinutes)
-	if len(errs) > 0 {
-		for _, err := range errs {
-			logger.Error(err)
-		}
-		return nil, errs[0]
+	sitewisecl, err := sitewiseclient.New(logger)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := sitewisecl.ListAssetModels(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, model := range out.AssetModelSummaries {
+		logger.Infoln("Model: ", *model.Name)
+		sitewisecl.DeleteAssetModel(ctx, model.Id)
 	}
 
 	message := "Data aligned and imported successfully"
@@ -80,5 +86,8 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 }
 
 func main() {
-	HandleRequest(context.Background(), true)
+	_, err := HandleRequest(context.Background(), true)
+	if err != nil {
+		panic(err)
+	}
 }
