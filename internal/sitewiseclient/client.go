@@ -233,8 +233,53 @@ func (c *IotSiteWiseClient) PollForAssetActiveStatus(ctx context.Context, assetI
 	return false
 }
 
+func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error {
+	assetModelInput := iotsitewise.UpdateAssetModelInput{
+		AssetModelId:              assetModel.AssetModelId,
+		AssetModelName:            assetModel.AssetModelName,
+		AssetModelDescription:     assetModel.AssetModelDescription,
+		AssetModelHierarchies:     assetModel.AssetModelHierarchies,
+		AssetModelProperties:      assetModel.AssetModelProperties,
+		AssetModelExternalId:      assetModel.AssetModelExternalId,
+		AssetModelCompositeModels: assetModel.AssetModelCompositeModels,
+	}
+
+	assetModelProperties := make(map[string]string, len(assetModel.AssetModelProperties))
+	for _, prop := range assetModel.AssetModelProperties {
+		assetModelProperties[*prop.Name] = *prop.Id
+	}
+
+	modified := false
+	for propertyName, ptype := range thingProperties {
+		_, ok := assetModelProperties[propertyName]
+		if !ok {
+			modified = true
+			if assetModelInput.AssetModelProperties == nil {
+				assetModelInput.AssetModelProperties = []types.AssetModelProperty{}
+			}
+			mappedType := mapType(ptype)
+			assetModelInput.AssetModelProperties = append(assetModelInput.AssetModelProperties, types.AssetModelProperty{
+				Name:     &propertyName,
+				DataType: mappedType,
+				Type: &types.PropertyType{
+					Measurement: &types.Measurement{},
+				},
+			})
+		}
+	}
+
+	if modified {
+		_, err := c.svc.UpdateAssetModel(ctx, &assetModelInput)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // property is map with key as SiteWise property id and as value the alias of the property to be updated
-func (c *IotSiteWiseClient) UpdateAssetProperty(ctx context.Context, assetId string, thingProperties map[string]string) error {
+func (c *IotSiteWiseClient) UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error {
 	assetDescribed, err := c.DescribeAsset(context.Background(), assetId)
 	if err != nil {
 		return err
@@ -325,7 +370,7 @@ func interfaceToString(value interface{}) string {
 		if err != nil {
 			return fmt.Sprintf("%v", v)
 		}
-		return string(encoded)		
+		return string(encoded)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
@@ -355,7 +400,7 @@ func (c *IotSiteWiseClient) PopulateSampledSamplesTimeSeriesByAlias(ctx context.
 			variant.DoubleValue = &v
 		case map[string]any:
 			encoded := interfaceToString(v)
-			variant.StringValue = &encoded		
+			variant.StringValue = &encoded
 		default:
 			c.logger.Warn("Unsupported type: ", reflect.TypeOf(v))
 			continue
