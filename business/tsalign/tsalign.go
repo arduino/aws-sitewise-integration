@@ -38,12 +38,12 @@ const importConcurrency = 10
 const retryCount = 5
 
 type TsAligner struct {
-	sitewisecl *sitewiseclient.IotSiteWiseClient
-	iotcl      *iot.Client
+	sitewisecl sitewiseclient.API
+	iotcl      iot.API
 	logger     *logrus.Entry
 }
 
-func New(sitewisecl *sitewiseclient.IotSiteWiseClient, iotcl *iot.Client, logger *logrus.Entry) *TsAligner {
+func New(sitewisecl sitewiseclient.API, iotcl iot.API, logger *logrus.Entry) *TsAligner {
 	return &TsAligner{sitewisecl: sitewisecl, iotcl: iotcl, logger: logger}
 }
 

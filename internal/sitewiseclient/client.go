@@ -39,6 +39,29 @@ type IotSiteWiseClient struct {
 	logger *logrus.Entry
 }
 
+//go:generate mockery --name API --filename sitewise_api.go
+type API interface {
+	ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	DescribeAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DescribeAssetModelOutput, error)
+	DeleteAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DeleteAssetModelOutput, error)
+	ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
+	CreateDataBulkImportJob(ctx context.Context, jobNumber int, bucket string, filesToImport []string, roleArn string) (*iotsitewise.CreateBulkImportJobOutput, error)
+	ListBulkImportJobs(ctx context.Context, nextToken *string) (*iotsitewise.ListBulkImportJobsOutput, error)
+	GetBulkImportJobStatus(ctx context.Context, jobId *string) (*iotsitewise.DescribeBulkImportJobOutput, error)
+	CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error)
+	CreateAsset(ctx context.Context, name string, assetModelId string, thingId string) (*iotsitewise.CreateAssetOutput, error)
+	DescribeModel(ctx context.Context, assetModelId string) (*iotsitewise.DescribeAssetModelOutput, error)
+	PollForModelActiveStatus(ctx context.Context, modelId string, maxRetry int) bool
+	IsModelActive(ctx context.Context, model *iotsitewise.DescribeAssetModelOutput) bool
+	DescribeAsset(ctx context.Context, assetId string) (*iotsitewise.DescribeAssetOutput, error)
+	IsAssetActive(ctx context.Context, asset *iotsitewise.DescribeAssetOutput) bool
+	PollForAssetActiveStatus(ctx context.Context, assetId string, maxRetry int) bool
+	UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error
+	UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error
+	PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error
+	PopulateSampledSamplesTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []any) error
+}
+
 func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	awsOpts := []func(*config.LoadOptions) error{}
 
