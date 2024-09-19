@@ -76,6 +76,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - ssm:GetParameter
+                  - ssm:PutParameter
                   - ssm:GetParameters
                   - ssm:GetParametersByPath
                 Resource: arn:aws:ssm:*:*:parameter/arduino/sitewise-importer/*

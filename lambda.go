@@ -19,6 +19,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/arduino/aws-sitewise-integration/app/align"
 	"github.com/arduino/aws-sitewise-integration/internal/parameters"
@@ -38,6 +40,7 @@ const (
 	IoTApiTags                         = ArduinoPrefix + "/iot/filter/tags"
 	SamplesReso                        = ArduinoPrefix + "/iot/samples-resolution"
 	Scheduling                         = ArduinoPrefix + "/iot/scheduling"
+	LastModelSync                      = ArduinoPrefix + "/iot/last-model-sync"
 	SamplesResolutionSeconds           = 300
 	DefaultTimeExtractionWindowMinutes = 30
 )
@@ -97,6 +100,22 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		logger.Errorf("Resolution %d is invalid", resolution)
 		return nil, errors.New("resolution must be between 60 and 3600")
 	}
+	// Resolve scheduling
+	extractionWindowMinutes, err := configureDataExtractionTimeWindow(logger, paramReader, stack)
+	if err != nil {
+		return nil, err
+	}
+
+	alignEntities := true
+	lastSync, _ := paramReader.ReadConfig(LastModelSync, stack)
+	if lastSync != nil {
+		if lastTimeSync, err := strconv.ParseInt(*lastSync, 10, 64); err == nil {
+			diffSeconds := time.Now().UTC().Unix() - lastTimeSync
+			if diffSeconds < 55*60*60 { // 55 minutes
+				alignEntities = false // Skip aligning entities
+			}
+		}
+	}
 
 	logger.Infoln("------ Running import. Stack:", stack)
 	if event.Dev || os.Getenv("DEV") == "true" {
@@ -113,21 +132,23 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	if tags != nil {
 		logger.Infoln("tags:", *tags)
 	}
-	// Resolve scheduling
-	extractionWindowMinutes, err := configureDataExtractionTimeWindow(logger, paramReader, stack)
-	if err != nil {
-		return nil, err
-	}
 
 	logger.Infoln("resolution seconds:", resolution)
 	logger.Infoln("time window minutes:", extractionWindowMinutes)
+	logger.Infoln("align entities and models:", alignEntities)
 
-	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, true, resolution, extractionWindowMinutes)
+	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, alignEntities, resolution, extractionWindowMinutes)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			logger.Error(err)
 		}
 		return nil, errs[0]
+	} else {
+		if alignEntities {
+			if err = paramReader.UpdateParameterValue(LastModelSync, stack, strconv.FormatInt(time.Now().UTC().Unix(), 10)); err != nil {
+				logger.Error("Error updating parameter "+paramReader.ResolveParameter(LastModelSync, stack), err)
+			}
+		}
 	}
 
 	message := "Data aligned and imported successfully"

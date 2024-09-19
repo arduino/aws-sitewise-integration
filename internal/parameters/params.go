@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 )
 
 const StackName = "<stack-name>"
@@ -68,4 +69,17 @@ func (c *ParametersClient) ReadConfig(param, stack string) (*string, error) {
 		return &defaultValue, nil
 	}
 	return paramValue, nil
+}
+
+func (c *ParametersClient) UpdateParameterValue(param, stack, value string) error {
+	param = c.ResolveParameter(param, stack)
+	_, err := c.ssmcl.PutParameter(context.Background(), &ssm.PutParameterInput{
+		Name:      aws.String(param),
+		Value:     aws.String(value),
+		Overwrite: aws.Bool(true),
+		Type:      types.ParameterTypeString,
+		DataType:  aws.String("text"),
+	})
+	return err
+
 }
