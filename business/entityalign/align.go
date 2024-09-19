@@ -35,11 +35,11 @@ const (
 )
 
 type aligner struct {
-	sitewisecl *sitewiseclient.IotSiteWiseClient
+	sitewisecl sitewiseclient.API
 	logger     *logrus.Entry
 }
 
-func New(sitewisecl *sitewiseclient.IotSiteWiseClient, logger *logrus.Entry) *aligner {
+func New(sitewisecl sitewiseclient.API, logger *logrus.Entry) *aligner {
 	return &aligner{
 		sitewisecl: sitewisecl,
 		logger:     logger,
@@ -65,6 +65,30 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 
 	// Align model assests with things for new properties added
 	a.logger.Infoln("=====> Aligning already created models with things")
+	models, errs := a.alignAlreadyCreatedModels(ctx, thingsMap, models, modelDefinitions, assets)
+	if len(errs) > 0 {
+		return errs
+	}
+
+	// Align not discovered models
+	a.logger.Infoln("=====> Create newly discovred models")
+	models, errs = a.alignModels(ctx, things, models)
+	if len(errs) > 0 {
+		return errs
+	}
+
+	// All models are created, now create assets. These can be done in parallel.
+	a.logger.Infoln("=====> Aligning and create assets")
+	return a.alignAssets(ctx, things, models, assets)
+}
+
+func (a *aligner) alignAlreadyCreatedModels(
+	ctx context.Context,
+	thingsMap map[string]iotclient.ArduinoThing,
+	models map[string]*string,
+	modelDefinitions map[string]*iotsitewise.DescribeAssetModelOutput,
+	assets map[string]assetDefintion) (map[string]*string, []error) {
+
 	for _, asset := range assets {
 		a.logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
 		// Get associated thing
@@ -95,7 +119,7 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 					err := a.sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing))
 					if err != nil {
 						a.logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
-						return []error{err}
+						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
 					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 5)
@@ -110,14 +134,53 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 		}
 	}
 
-	// Align not discovered models
-	a.logger.Infoln("=====> Create newly discovred models")
-	models, errs := a.alignModels(ctx, things, models)
-	if len(errs) > 0 {
-		return errs
+	return models, nil
+}
+
+func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
+	// Understand if there are models to create
+	for _, thing := range things {
+		propsTypeMap := make(map[string]string, len(thing.Properties))
+		for _, prop := range thing.Properties {
+			propsTypeMap[prop.Name] = prop.Type
+		}
+
+		key := buildModelKeyFromMap(propsTypeMap)
+		a.logger.Debugln("Searching for model with key: ", key)
+
+		// Discover thing properties
+		_, ok := models[key]
+		if !ok {
+			a.logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
+			var createdModel *iotsitewise.CreateAssetModelOutput
+			var err error
+			var modelName string
+			for i := 0; i < 100; i++ {
+				modelName = composeModelName(thing.Name, i)
+				createdModel, err = a.sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
+				if err != nil {
+					var errConflicc *types.ResourceAlreadyExistsException
+					if errors.As(err, &errConflicc) {
+						a.logger.Infoln("  Model already exists with the same name, retry")
+						continue
+					}
+					return models, []error{err}
+				}
+				// If model is created, exit the loop
+				break
+			}
+
+			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
+			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 5)
+			models[key] = createdModel.AssetModelId
+		}
+
 	}
 
-	// All models are created, now create assets. These can be done in parallel.
+	return models, nil
+}
+
+func (a *aligner) alignAssets(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string, assets map[string]assetDefintion) []error {
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, alignParallelism)
 	errorChannel := make(chan error, len(things))
@@ -171,7 +234,7 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 				a.sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
 			}
 
-			err = a.sitewisecl.UpdateAssetProperties(ctx, *assetId, propsAliasMap)
+			err := a.sitewisecl.UpdateAssetProperties(ctx, *assetId, propsAliasMap)
 			if err != nil {
 				a.logger.Errorln("Error updating asset properties for thing: ", thing.Id, thing.Name, err)
 				errorChannel <- err
@@ -197,104 +260,6 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 	}
 
 	return nil
-}
-
-func (a *aligner) alignAlreadyCreatedModels(
-	ctx context.Context,
-	thingsMap map[string]iotclient.ArduinoThing,
-	models map[string]*string,
-	modelDefinitions map[string]*iotsitewise.DescribeAssetModelOutput,
-	assets map[string]assetDefintion) []error {
-
-	for _, asset := range assets {
-		a.logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
-		// Get associated thing
-		thing, ok := thingsMap[asset.thingId]
-		if !ok {
-			a.logger.Debugln("Thing not found for asset: ", asset.assetId, ". Skipping.")
-			continue
-		}
-		thingKey := buildModelKeyFromThing(thing)
-
-		// Get model key from associated model
-		descModel, ok := modelDefinitions[asset.modelId]
-		if !ok {
-			a.logger.Debugln("Model not found for asset: ", asset.assetId, ". Skipping.")
-			continue
-		}
-		if len(descModel.AssetModelProperties) > 0 {
-			modelKey, ok := buildModelKeyFromModel(descModel)
-			if !ok {
-				continue
-			}
-			// Check if model key is the same as thing key
-			if modelKey != thingKey && thingKey != "" && modelKey != "" {
-				if isThingContainedInModel(modelKey, thingKey) {
-					a.logger.Infoln("Thing is contained into given model, skipping model update. Model: ", descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id)
-				} else {
-					a.logger.Warnln("Model and thing are not aligned. Model(key): ", modelKey, " - Thing(key): ", thingKey)
-					err := a.sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing))
-					if err != nil {
-						a.logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
-						return []error{err}
-					}
-					a.logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 5)
-				}
-
-				models[thingKey] = descModel.AssetModelId
-			}
-			continue
-		} else {
-			a.logger.Warnln("Model has no properties, skipping.")
-			continue
-		}
-	}
-
-	return nil
-}
-
-func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
-	// Understand if there are models to create
-	for _, thing := range things {
-		propsTypeMap := make(map[string]string, len(thing.Properties))
-		for _, prop := range thing.Properties {
-			propsTypeMap[prop.Name] = prop.Type
-		}
-
-		key := buildModelKeyFromMap(propsTypeMap)
-		a.logger.Debugln("Searching for model with key: ", key)
-
-		// Discover thing properties
-		_, ok := models[key]
-		if !ok {
-			a.logger.Infoln("Model not found for thing: ", thing.Id, thing.Name, ". Creating it.")
-			var createdModel *iotsitewise.CreateAssetModelOutput
-			var err error
-			var modelName string
-			for i := 0; i < 100; i++ {
-				modelName = composeModelName(thing.Name, i)
-				createdModel, err = a.sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
-				if err != nil {
-					var errConflicc *types.ResourceAlreadyExistsException
-					if errors.As(err, &errConflicc) {
-						a.logger.Infoln("  Model already exists with the same name, retry")
-						continue
-					}
-					return models, []error{err}
-				}
-				// If model is created, exit the loop
-				break
-			}
-
-			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 5)
-			models[key] = createdModel.AssetModelId
-		}
-
-	}
-
-	return models, nil
 }
 
 func composeModelName(thingName string, increment int) string {
