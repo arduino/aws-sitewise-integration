@@ -186,7 +186,6 @@ func (a *aligner) alignAssets(ctx context.Context, things []iotclient.ArduinoThi
 	tokens := make(chan struct{}, alignParallelism)
 	errorChannel := make(chan error, len(things))
 
-	a.logger.Infoln("=====> Aligning and create assets")
 	for _, thing := range things {
 		propsAliasMap := make(map[string]string, len(thing.Properties))
 		propsTypeMap := make(map[string]string, len(thing.Properties))

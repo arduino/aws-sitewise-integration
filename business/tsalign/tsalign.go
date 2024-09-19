@@ -388,6 +388,10 @@ func partitionSampledResults(response iotclient.ArduinoSeriesSampledResponse) []
 	return chunks
 }
 
+func isLastValueAllowedPropertyType(pType string) bool {
+	return iot.IsPropertyString(pType) || iot.IsPropertyNumberType(pType) || iot.IsPropertyBool(pType) || iot.IsPropertyLocation(pType)
+}
+
 func (a *TsAligner) populateLastValueForOnChangeProperties(
 	ctx context.Context,
 	propertiesMap map[string]iotclient.ArduinoProperty,
@@ -399,14 +403,18 @@ func (a *TsAligner) populateLastValueForOnChangeProperties(
 	for propertyId, alias := range propertiesToImportAliases {
 		if !slices.Contains(importedProperties, propertyId) {
 			property, ok := propertiesMap[propertyId]
-			if !ok || property.LastValue == nil {
+			if !ok || property.LastValue == nil || property.UpdateStrategy != "ON_CHANGE" {
 				continue
 			}
-			lastValuesToImport = append(lastValuesToImport, sitewiseclient.DataPoint{
-				PropertyAlias: alias,
-				Ts:            now.Unix(),
-				Value:         property.LastValue,
-			})
+
+			if isLastValueAllowedPropertyType(property.Type) {
+				a.logger.Debugln("  + Importing last value for: ", alias, " - name ", property.Name, " - last value: ", property.UpdateStrategy, " - ", property.LastValue)
+				lastValuesToImport = append(lastValuesToImport, sitewiseclient.DataPoint{
+					PropertyAlias: alias,
+					Ts:            now.Unix(),
+					Value:         property.LastValue,
+				})
+			}
 		}
 	}
 	if len(lastValuesToImport) > 0 {
