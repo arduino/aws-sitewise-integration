@@ -55,7 +55,8 @@ func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret,
 	}
 
 	if alignEntities {
-		errs := entityalign.Align(ctx, logger, things, sitewisecl)
+		aligner := entityalign.New(sitewisecl, logger)
+		errs := aligner.Align(ctx, things)
 		if errs != nil {
 			return errs
 		}
