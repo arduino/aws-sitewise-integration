@@ -39,6 +39,30 @@ type IotSiteWiseClient struct {
 	logger *logrus.Entry
 }
 
+//go:generate mockery --name API --filename sitewise_api.go
+type API interface {
+	ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	DescribeAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DescribeAssetModelOutput, error)
+	DeleteAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DeleteAssetModelOutput, error)
+	ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
+	CreateDataBulkImportJob(ctx context.Context, jobNumber int, bucket string, filesToImport []string, roleArn string) (*iotsitewise.CreateBulkImportJobOutput, error)
+	ListBulkImportJobs(ctx context.Context, nextToken *string) (*iotsitewise.ListBulkImportJobsOutput, error)
+	GetBulkImportJobStatus(ctx context.Context, jobId *string) (*iotsitewise.DescribeBulkImportJobOutput, error)
+	CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error)
+	CreateAsset(ctx context.Context, name string, assetModelId string, thingId string) (*iotsitewise.CreateAssetOutput, error)
+	DescribeModel(ctx context.Context, assetModelId string) (*iotsitewise.DescribeAssetModelOutput, error)
+	PollForModelActiveStatus(ctx context.Context, modelId string, maxRetry int) bool
+	IsModelActive(ctx context.Context, model *iotsitewise.DescribeAssetModelOutput) bool
+	DescribeAsset(ctx context.Context, assetId string) (*iotsitewise.DescribeAssetOutput, error)
+	IsAssetActive(ctx context.Context, asset *iotsitewise.DescribeAssetOutput) bool
+	PollForAssetActiveStatus(ctx context.Context, assetId string, maxRetry int) bool
+	UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error
+	UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error
+	PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error
+	PopulateSampledSamplesTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []any) error
+	PopulateArbitrarySamplesByAlias(ctx context.Context, points []DataPoint) error
+}
+
 func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	awsOpts := []func(*config.LoadOptions) error{}
 
@@ -437,5 +461,114 @@ func (c *IotSiteWiseClient) PopulateSampledSamplesTimeSeriesByAlias(ctx context.
 			}
 		}
 	}
+	return nil
+}
+
+type DataPoint struct {
+	PropertyAlias string
+	Ts            int64
+	Value         any
+}
+
+func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context, points []DataPoint) error {
+	if len(points) == 0 {
+		return fmt.Errorf("no data to populate")
+	}
+
+	var data []types.PutAssetPropertyValueEntry
+	entry := 1
+
+	for i := 0; i < len(points); i++ {
+		variant := types.Variant{}
+
+		switch v := points[i].Value.(type) {
+		case bool:
+			vBool := 0.0
+			if v {
+				vBool = 1.0
+			}
+			variant.DoubleValue = &vBool
+		case string:
+			variant.StringValue = &v
+		case int32:
+			valInt32 := v
+			variant.IntegerValue = &valInt32
+		case int64:
+			valInt32 := int32(v)
+			variant.IntegerValue = &valInt32
+		case int:
+			valInt32 := int32(v)
+			variant.IntegerValue = &valInt32
+		case float32:
+			valFloat := float64(v)
+			variant.DoubleValue = &valFloat
+		case float64:
+			variant.DoubleValue = &v
+		case map[string]any:
+			encoded := interfaceToString(v)
+			variant.StringValue = &encoded
+		default:
+			c.logger.Warn("Unsupported type: ", reflect.TypeOf(v))
+			continue
+		}
+
+		entryIdStringValue := strconv.Itoa(entry)
+		data = append(data, types.PutAssetPropertyValueEntry{
+			EntryId:       &entryIdStringValue,
+			PropertyAlias: &points[i].PropertyAlias,
+			PropertyValues: []types.AssetPropertyValue{
+				{
+					Timestamp: &types.TimeInNanos{
+						TimeInSeconds: &points[i].Ts,
+					},
+					Value:   &variant,
+					Quality: types.QualityGood,
+				},
+			},
+		})
+
+		entry++
+
+		if len(data) == 10 {
+			out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+				Entries: data,
+			})
+			if err != nil {
+				return err
+			}
+			if out.ErrorEntries != nil {
+				for _, entry := range out.ErrorEntries {
+					c.logger.Error("Error on entry: ", *entry.EntryId)
+					if entry.Errors != nil {
+						for _, err := range entry.Errors {
+							c.logger.Error("		[Error last value] ", err.ErrorCode, *err.ErrorMessage)
+						}
+					}
+				}
+			}
+			data = []types.PutAssetPropertyValueEntry{}
+			entry = 1
+		}
+	}
+
+	if len(data) > 0 {
+		out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+			Entries: data,
+		})
+		if err != nil {
+			return err
+		}
+		if out.ErrorEntries != nil {
+			for _, entry := range out.ErrorEntries {
+				c.logger.Error("Error on entry: ", *entry.EntryId)
+				if entry.Errors != nil {
+					for _, err := range entry.Errors {
+						c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
