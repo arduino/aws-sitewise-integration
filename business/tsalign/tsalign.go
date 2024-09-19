@@ -83,11 +83,15 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 					a.logger.Debug("Thing not found, not detected by import filters: ", *asset.ExternalId)
 					continue
 				}
+				propertiesMap := make(map[string]iotclient.ArduinoProperty, len(thing.Properties))
+				for _, p := range thing.Properties {
+					propertiesMap[p.Id] = p
+				}
 
 				tokens <- struct{}{}
 				wg.Add(1)
 
-				go func(assetId string, assetName string) {
+				go func(assetId string, assetName string, propertiesMap map[string]iotclient.ArduinoProperty) {
 					defer func() { <-tokens }()
 					defer wg.Done()
 
@@ -99,23 +103,37 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 					propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
+					importedProperties := []string{}
 					if len(propertiesToImport) > 0 {
-						err = a.populateTSDataIntoSiteWise(ctx, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
+						p, err := a.populateTSDataIntoSiteWise(ctx, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating time series data: ", err)
 							return
 						}
+						if len(p) > 0 {
+							importedProperties = append(importedProperties, p...)
+						}
 					}
 
 					if len(charPropertiesToImport) > 0 {
-						err = a.populateCharTSDataIntoSiteWise(ctx, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
+						p, err := a.populateCharTSDataIntoSiteWise(ctx, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating string based time series data: ", err)
 							return
 						}
+						if len(p) > 0 {
+							importedProperties = append(importedProperties, p...)
+						}
 					}
 
-				}(*asset.Id, *asset.Name)
+					// Check if there are properties that have been imported (on_change - import last value)
+					err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, propertiesToImportAliases)
+					if err != nil {
+						a.logger.Error("Error populating last values time series data: ", err)
+						return
+					}
+
+				}(*asset.Id, *asset.Name, propertiesMap)
 			}
 
 			nextToken = assets.NextToken
@@ -182,8 +200,9 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
 	resolution int,
-	from, to time.Time) error {
+	from, to time.Time) ([]string, error) {
 
+	propertiesImported := []string{}
 	var batched *iotclient.ArduinoSeriesBatch
 	var err error
 	var retry bool
@@ -198,7 +217,7 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		}
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, response := range batched.Responses {
 		if response.CountValues == 0 {
@@ -206,6 +225,9 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		}
 
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
+		if !slices.Contains(propertiesToImport, propertyID) {
+			propertiesImported = append(propertiesImported, propertyID)
+		}
 		if !slices.Contains(propertiesToImport, propertyID) {
 			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
@@ -221,11 +243,11 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 			a.logger.Debugln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
 			erri := a.sitewisecl.PopulateTimeSeriesByAlias(ctx, alias, c.ts, c.values)
 			if erri != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return propertiesImported, nil
 }
 
 type chunk struct {
@@ -270,8 +292,9 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 	propertiesToImport []string,
 	propertiesToImportAliases map[string]string,
 	resolution int,
-	from, to time.Time) error {
+	from, to time.Time) ([]string, error) {
 
+	propertiesImported := []string{}
 	var batched *iotclient.ArduinoSeriesBatchSampled
 	var err error
 	var retry bool
@@ -287,7 +310,7 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 		}
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, response := range batched.Responses {
 		if response.CountValues == 0 {
@@ -295,6 +318,9 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 		}
 
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
+		if !slices.Contains(propertiesToImport, propertyID) {
+			propertiesImported = append(propertiesImported, propertyID)
+		}
 		if !slices.Contains(propertiesToImport, propertyID) {
 			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
@@ -310,21 +336,21 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 			a.logger.Debugln("  Importing ", len(c.ts), " data points for: ", alias, " - ts:", joinTs(c.ts))
 			erri := a.sitewisecl.PopulateSampledSamplesTimeSeriesByAlias(ctx, alias, c.ts, c.values)
 			if erri != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return propertiesImported, nil
 }
 
-type chunkChars struct {
+type chunkAnyValue struct {
 	ts     []int64
 	values []any
 }
 
 // To be coherent with SiteWise API, we need to partition the results in chunks of 10 elements
-func partitionSampledResults(response iotclient.ArduinoSeriesSampledResponse) []chunkChars {
-	chunks := []chunkChars{}
+func partitionSampledResults(response iotclient.ArduinoSeriesSampledResponse) []chunkAnyValue {
+	chunks := []chunkAnyValue{}
 	for i := 0; i < len(response.Times); i += 10 {
 		end := i + 10
 		if end > len(response.Times) {
@@ -336,11 +362,43 @@ func partitionSampledResults(response iotclient.ArduinoSeriesSampledResponse) []
 		for j := 0; j < len(times); j++ {
 			unixTimes[j] = times[j].Unix()
 		}
-		c := chunkChars{
+		c := chunkAnyValue{
 			ts:     unixTimes,
 			values: response.Values[i:end],
 		}
 		chunks = append(chunks, c)
 	}
 	return chunks
+}
+
+func (a *TsAligner) populateLastValueForOnChangeProperties(
+	ctx context.Context,
+	propertiesMap map[string]iotclient.ArduinoProperty,
+	importedProperties []string,
+	propertiesToImportAliases map[string]string) error {
+
+	lastValuesToImport := []sitewiseclient.DataPoint{}
+	now := time.Now().UTC()
+	for propertyId, alias := range propertiesToImportAliases {
+		if !slices.Contains(importedProperties, propertyId) {
+			property, ok := propertiesMap[propertyId]
+			if !ok || property.LastValue == nil {
+				continue
+			}
+			lastValuesToImport = append(lastValuesToImport, sitewiseclient.DataPoint{
+				PropertyAlias: alias,
+				Ts:            now.Unix(),
+				Value:         property.LastValue,
+			})
+		}
+	}
+	if len(lastValuesToImport) > 0 {
+		err := a.sitewisecl.PopulateArbitrarySamplesByAlias(ctx, lastValuesToImport)
+		if err != nil {
+			a.logger.Error("Error populating last values time series data: ", err)
+			return err
+		}
+	}
+
+	return nil
 }

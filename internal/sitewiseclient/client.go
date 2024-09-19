@@ -60,6 +60,7 @@ type API interface {
 	UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error
 	PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error
 	PopulateSampledSamplesTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []any) error
+	PopulateArbitrarySamplesByAlias(ctx context.Context, points []DataPoint) error
 }
 
 func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
@@ -443,6 +444,82 @@ func (c *IotSiteWiseClient) PopulateSampledSamplesTimeSeriesByAlias(ctx context.
 		PropertyAlias:  &propertyAlias,
 		PropertyValues: pvalues,
 	})
+
+	out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+		Entries: data,
+	})
+	if err != nil {
+		return err
+	}
+	if out.ErrorEntries != nil {
+		for _, entry := range out.ErrorEntries {
+			c.logger.Error("Error on entry: ", *entry.EntryId)
+			if entry.Errors != nil {
+				for _, err := range entry.Errors {
+					c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+type DataPoint struct {
+	PropertyAlias string
+	Ts            int64
+	Value         any
+}
+
+func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context, points []DataPoint) error {
+	if len(points) == 0 {
+		return fmt.Errorf("no data to populate")
+	}
+	var data []types.PutAssetPropertyValueEntry
+	var pvalues []types.AssetPropertyValue
+	entry := "1"
+
+	for i := 0; i < len(points); i++ {
+		variant := types.Variant{}
+
+		switch v := points[i].Value.(type) {
+		case string:
+			variant.StringValue = &v
+		case int32:
+			valInt32 := v
+			variant.IntegerValue = &valInt32
+		case int64:
+			valInt32 := int32(v)
+			variant.IntegerValue = &valInt32
+		case int:
+			valInt32 := int32(v)
+			variant.IntegerValue = &valInt32
+		case float32:
+			valFloat := float64(v)
+			variant.DoubleValue = &valFloat
+		case float64:
+			variant.DoubleValue = &v
+		case map[string]any:
+			encoded := interfaceToString(v)
+			variant.StringValue = &encoded
+		default:
+			c.logger.Warn("Unsupported type: ", reflect.TypeOf(v))
+			continue
+		}
+
+		pvalues = append(pvalues, types.AssetPropertyValue{
+			Timestamp: &types.TimeInNanos{
+				TimeInSeconds: &points[i].Ts,
+			},
+			Value:   &variant,
+			Quality: types.QualityGood,
+		})
+
+		data = append(data, types.PutAssetPropertyValueEntry{
+			EntryId:        &entry,
+			PropertyAlias:  &points[i].PropertyAlias,
+			PropertyValues: pvalues,
+		})
+	}
 
 	out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
 		Entries: data,
