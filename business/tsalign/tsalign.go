@@ -80,7 +80,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 				// Asset external id is mapped on Thing ID
 				thing, ok := thingsMap[*asset.ExternalId]
 				if !ok {
-					a.logger.Warn("Thing not found: ", *asset.ExternalId)
+					a.logger.Debug("Thing not found, not detected by import filters: ", *asset.ExternalId)
 					continue
 				}
 

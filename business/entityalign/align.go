@@ -94,7 +94,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 		// Get associated thing
 		thing, ok := thingsMap[asset.thingId]
 		if !ok {
-			a.logger.Debugln("Thing not found for asset: ", asset.assetId, ". Skipping.")
+			a.logger.Debugln("Thing not found for asset, not detected by import filters: ", asset.assetId, ". Skipping.")
 			continue
 		}
 		thingKey := buildModelKeyFromThing(thing)
@@ -121,7 +121,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 						a.logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
 						return models, []error{err}
 					}
-					a.logger.Infoln("Model properties updated for model: ", descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
+					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
 					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 5)
 				}
 
