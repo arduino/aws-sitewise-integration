@@ -474,14 +474,21 @@ func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context,
 	if len(points) == 0 {
 		return fmt.Errorf("no data to populate")
 	}
+
 	var data []types.PutAssetPropertyValueEntry
 	var pvalues []types.AssetPropertyValue
-	entry := "1"
+	entry := 1
 
 	for i := 0; i < len(points); i++ {
 		variant := types.Variant{}
 
 		switch v := points[i].Value.(type) {
+		case bool:
+			vBool := 0.0
+			if v {
+				vBool = 1.0
+			}
+			variant.DoubleValue = &vBool
 		case string:
 			variant.StringValue = &v
 		case int32:
@@ -514,28 +521,55 @@ func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context,
 			Quality: types.QualityGood,
 		})
 
+		entryIdStringValue := strconv.Itoa(entry)
 		data = append(data, types.PutAssetPropertyValueEntry{
-			EntryId:        &entry,
+			EntryId:        &entryIdStringValue,
 			PropertyAlias:  &points[i].PropertyAlias,
 			PropertyValues: pvalues,
 		})
+
+		entry++
+
+		if len(data) == 10 {
+			out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+				Entries: data,
+			})
+			if err != nil {
+				return err
+			}
+			if out.ErrorEntries != nil {
+				for _, entry := range out.ErrorEntries {
+					c.logger.Error("Error on entry: ", *entry.EntryId)
+					if entry.Errors != nil {
+						for _, err := range entry.Errors {
+							c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+						}
+					}
+				}
+			}
+			data = []types.PutAssetPropertyValueEntry{}
+			entry = 1
+		}
 	}
 
-	out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
-		Entries: data,
-	})
-	if err != nil {
-		return err
-	}
-	if out.ErrorEntries != nil {
-		for _, entry := range out.ErrorEntries {
-			c.logger.Error("Error on entry: ", *entry.EntryId)
-			if entry.Errors != nil {
-				for _, err := range entry.Errors {
-					c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+	if len(data) > 0 {
+		out, err := c.svc.BatchPutAssetPropertyValue(ctx, &iotsitewise.BatchPutAssetPropertyValueInput{
+			Entries: data,
+		})
+		if err != nil {
+			return err
+		}
+		if out.ErrorEntries != nil {
+			for _, entry := range out.ErrorEntries {
+				c.logger.Error("Error on entry: ", *entry.EntryId)
+				if entry.Errors != nil {
+					for _, err := range entry.Errors {
+						c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+					}
 				}
 			}
 		}
 	}
+
 	return nil
 }
