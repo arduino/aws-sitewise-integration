@@ -476,7 +476,6 @@ func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context,
 	}
 
 	var data []types.PutAssetPropertyValueEntry
-	var pvalues []types.AssetPropertyValue
 	entry := 1
 
 	for i := 0; i < len(points); i++ {
@@ -513,19 +512,19 @@ func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context,
 			continue
 		}
 
-		pvalues = append(pvalues, types.AssetPropertyValue{
-			Timestamp: &types.TimeInNanos{
-				TimeInSeconds: &points[i].Ts,
-			},
-			Value:   &variant,
-			Quality: types.QualityGood,
-		})
-
 		entryIdStringValue := strconv.Itoa(entry)
 		data = append(data, types.PutAssetPropertyValueEntry{
-			EntryId:        &entryIdStringValue,
-			PropertyAlias:  &points[i].PropertyAlias,
-			PropertyValues: pvalues,
+			EntryId:       &entryIdStringValue,
+			PropertyAlias: &points[i].PropertyAlias,
+			PropertyValues: []types.AssetPropertyValue{
+				{
+					Timestamp: &types.TimeInNanos{
+						TimeInSeconds: &points[i].Ts,
+					},
+					Value:   &variant,
+					Quality: types.QualityGood,
+				},
+			},
 		})
 
 		entry++
@@ -542,7 +541,7 @@ func (c *IotSiteWiseClient) PopulateArbitrarySamplesByAlias(ctx context.Context,
 					c.logger.Error("Error on entry: ", *entry.EntryId)
 					if entry.Errors != nil {
 						for _, err := range entry.Errors {
-							c.logger.Error("		[Error sampling] ", err.ErrorCode, *err.ErrorMessage)
+							c.logger.Error("		[Error last value] ", err.ErrorCode, *err.ErrorMessage)
 						}
 					}
 				}

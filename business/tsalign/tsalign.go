@@ -51,17 +51,18 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	ctx context.Context,
 	timeWindowInMinutes int,
 	thingsMap map[string]iotclient.ArduinoThing,
-	resolution int) error {
+	resolution int) []error {
 
 	var wg sync.WaitGroup
 	tokens := make(chan struct{}, importConcurrency)
+	errorChannel := make(chan error, len(thingsMap))
 
 	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
 
 	a.logger.Infoln("=====> Align perf data - time window ", timeWindowInMinutes, " minutes - from ", from, " to ", to, " - resolution ", resolution, " seconds")
 	models, err := a.sitewisecl.ListAssetModels(ctx, nil)
 	if err != nil {
-		return err
+		return []error{err}
 	}
 	for _, model := range models.AssetModelSummaries {
 		continueimport := true
@@ -69,7 +70,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 		for continueimport {
 			assets, err := a.sitewisecl.ListAssets(ctx, model.Id, nextToken)
 			if err != nil {
-				return err
+				return []error{err}
 			}
 
 			for _, asset := range assets.AssetSummaries {
@@ -108,6 +109,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 						p, err := a.populateTSDataIntoSiteWise(ctx, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating time series data: ", err)
+							errorChannel <- err
 							return
 						}
 						if len(p) > 0 {
@@ -119,6 +121,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 						p, err := a.populateCharTSDataIntoSiteWise(ctx, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
 						if err != nil {
 							a.logger.Error("Error populating string based time series data: ", err)
+							errorChannel <- err
 							return
 						}
 						if len(p) > 0 {
@@ -130,6 +133,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 					err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, propertiesToImportAliases)
 					if err != nil {
 						a.logger.Error("Error populating last values time series data: ", err)
+						errorChannel <- err
 						return
 					}
 
@@ -145,6 +149,19 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 
 	// Wait for all routines termination
 	wg.Wait()
+	close(errorChannel)
+
+	// Check if there were errors
+	errorsToReturn := []error{}
+	for err := range errorChannel {
+		if err != nil {
+			errorsToReturn = append(errorsToReturn, err)
+		}
+	}
+	if len(errorsToReturn) > 0 {
+		a.logger.Warnln("=====> Detected execution errors...")
+		return errorsToReturn
+	}
 
 	return nil
 }
