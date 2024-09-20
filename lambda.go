@@ -137,7 +137,14 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 	logger.Infoln("time window minutes:", extractionWindowMinutes)
 	logger.Infoln("align entities and models:", alignEntities)
 
-	errs := align.StartAlignAndImport(ctx, logger, *apikey, *apiSecret, organizationId, tags, alignEntities, resolution, extractionWindowMinutes)
+	aligner, errs := align.New(*apikey, *apiSecret, organizationId, logger)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			logger.Error(err)
+		}
+		return nil, errs[0]
+	}
+	errs = aligner.StartAlignAndImport(ctx, tags, alignEntities, resolution, extractionWindowMinutes)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			logger.Error(err)
