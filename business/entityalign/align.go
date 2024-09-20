@@ -31,6 +31,7 @@ import (
 )
 
 const (
+	waitTimeForModelUpdate = 15
 	alignParallelism = 6
 	keySeparator     = ","
 )
@@ -125,7 +126,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 5)
+					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForModelUpdate)
 				}
 
 				models[thingKey] = descModel.AssetModelId
@@ -174,7 +175,7 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 			}
 
 			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 5)
+			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForModelUpdate)
 			models[key] = createdModel.AssetModelId
 		}
 
@@ -418,7 +419,7 @@ func extractUomMap(types map[string]iotclient.ArduinoPropertytype) map[string][]
 	uomMap := make(map[string][]string)
 	for _, prop := range types {
 		if len(prop.Units) > 0 {
-			uomMap[prop.Name] = prop.Units
+			uomMap[prop.Type] = prop.Units
 		}
 	}
 	return uomMap
