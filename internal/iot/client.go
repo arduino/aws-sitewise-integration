@@ -30,6 +30,7 @@ type API interface {
 	ThingList(ctx context.Context, ids []string, device *string, props bool, tags map[string]string) ([]iotclient.ArduinoThing, error)
 	GetTimeSeriesByThing(ctx context.Context, thingID string, from, to time.Time, interval int64) (*iotclient.ArduinoSeriesBatch, bool, error)
 	GetTimeSeriesSampling(ctx context.Context, propertiesToImport []string, from, to time.Time, interval int32) (*iotclient.ArduinoSeriesBatchSampled, bool, error)
+	PropertiesDefinition(ctx context.Context) (map[string]iotclient.ArduinoPropertytype, error)
 }
 
 // Client can perform actions on Arduino IoT Cloud.
@@ -183,4 +184,25 @@ func (cl *Client) setup(client, secret, organizationId string) error {
 	cl.api = iotclient.NewAPIClient(config)
 
 	return nil
+}
+
+// PropertiesDefinition returns properties definition from Arduino IoT Cloud.
+func (cl *Client) PropertiesDefinition(ctx context.Context) (map[string]iotclient.ArduinoPropertytype, error) {
+	ctx, err := ctxWithToken(ctx, cl.token)
+	if err != nil {
+		return nil, err
+	}
+
+	request := cl.api.PropertyTypesV1Api.PropertyTypesV1ListTypes(ctx)
+	types, _, err := cl.api.PropertyTypesV1Api.PropertyTypesV1ListTypesExecute(request)
+	if err != nil {
+		err = fmt.Errorf("retrieving things, %w", errorDetail(err))
+		return nil, err
+	}
+
+	pTypes := make(map[string]iotclient.ArduinoPropertytype)
+	for _, t := range types {
+		pTypes[t.Type] = t
+	}
+	return pTypes, nil
 }
