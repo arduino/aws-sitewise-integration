@@ -174,7 +174,7 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 		for _, thingProperty := range thing.Properties {
 			if *prop.Name == thingProperty.Name {
 				a.logger.Debugln("  Importing TS for: ", assetName, *prop.Name, " thingPropertyId: ", thingProperty.Id)
-				if iot.IsPropertyString(thingProperty.Type) {
+				if iot.IsPropertyString(thingProperty.Type) || iot.IsPropertyLocation(thingProperty.Type) {
 					charPropertiesToImport = append(charPropertiesToImport, thingProperty.Id)
 				} else {
 					propertiesToImport = append(propertiesToImport, thingProperty.Id)
