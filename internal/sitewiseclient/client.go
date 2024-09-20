@@ -316,15 +316,23 @@ func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, asse
 	return nil
 }
 
+type propertyDefinition struct {
+	ArduinoPropertyId string
+	AssetProperty     *types.AssetProperty
+}
+
 // property is map with key as SiteWise property id and as value the alias of the property to be updated
 func (c *IotSiteWiseClient) UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error {
 	assetDescribed, err := c.DescribeAsset(context.Background(), assetId)
 	if err != nil {
 		return err
 	}
-	assetPropertiesMap := make(map[string]string, len(thingProperties))
+	assetPropertiesMap := make(map[string]propertyDefinition, len(thingProperties))
 	for _, prop := range assetDescribed.AssetProperties {
-		assetPropertiesMap[*prop.Name] = *prop.Id
+		assetPropertiesMap[*prop.Name] = propertyDefinition{
+			ArduinoPropertyId: *prop.Id,
+			AssetProperty:     &prop,
+		}
 	}
 
 	for property, alias := range thingProperties {
@@ -333,9 +341,15 @@ func (c *IotSiteWiseClient) UpdateAssetProperties(ctx context.Context, assetId s
 			c.logger.Info("Property not found in asset: ", property)
 			continue
 		}
+
+		// Check if property is already updated
+		if sitewisePropertyId.AssetProperty.Alias != nil && *sitewisePropertyId.AssetProperty.Alias == alias {
+			continue
+		}
+
 		_, err := c.svc.UpdateAssetProperty(ctx, &iotsitewise.UpdateAssetPropertyInput{
 			AssetId:       &assetId,
-			PropertyId:    &sitewisePropertyId,
+			PropertyId:    &sitewisePropertyId.ArduinoPropertyId,
 			PropertyAlias: &alias,
 		})
 		if err != nil {
