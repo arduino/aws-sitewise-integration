@@ -187,7 +187,7 @@ func (c *IotSiteWiseClient) CreateAssetModel(ctx context.Context, name string, p
 	for property, ptype := range properties {
 		mappedType := mapType(ptype)
 		var uom *string
-		if u, ok := uomMap[property]; ok {
+		if u, ok := uomMap[ptype]; ok {
 			if len(u) > 0 {
 				uom = &u[0]
 			}
@@ -290,7 +290,7 @@ func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, asse
 			}
 			mappedType := mapType(ptype)
 			var uom *string
-			if u, ok := uomMap[propertyName]; ok {
+			if u, ok := uomMap[ptype]; ok {
 				if len(u) > 0 {
 					uom = &u[0]
 				}
