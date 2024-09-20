@@ -79,7 +79,7 @@ func TestAlign_AlignAlreadyCreatedModelsIfNeeded(t *testing.T) {
 	}
 
 	swclient.On("UpdateAssetModelProperties", ctx, mock.Anything, thingPropertiesMap(thingsMap[thingId]), mock.Anything).Return(nil)
-	swclient.On("PollForModelActiveStatus", ctx, modelId, 5).Return(true)
+	swclient.On("PollForModelActiveStatus", ctx, modelId, mock.Anything).Return(true)
 
 	models := make(map[string]*string)
 	uomMap := make(map[string][]string)
