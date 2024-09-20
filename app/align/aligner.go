@@ -27,43 +27,61 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func StartAlignAndImport(ctx context.Context, logger *logrus.Entry, key, secret, orgid string, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) []error {
+type entityAligner struct {
+	logger     *logrus.Entry
+	sitewisecl *sitewiseclient.IotSiteWiseClient
+	iotcl      *iot.Client
+}
 
+func New(key, secret, orgid string, logger *logrus.Entry) (*entityAligner, []error) {
 	// Init clients
 	sitewisecl, err := sitewiseclient.New(logger)
 	if err != nil {
-		return []error{err}
+		return nil, []error{err}
 	}
 	iotcl, err := iot.NewClient(key, secret, orgid)
 	if err != nil {
-		return []error{err}
+		return nil, []error{err}
 	}
 
+	return &entityAligner{
+		logger:     logger,
+		sitewisecl: sitewisecl,
+		iotcl:      iotcl,
+	}, nil
+}
+
+func (a *entityAligner) StartAlignAndImport(ctx context.Context, tagsF *string, alignEntities bool, resolution, timeWindowMinutes int) []error {
 	if tagsF == nil {
-		logger.Infoln("Things - searching with no filter")
+		a.logger.Infoln("Things - searching with no filter")
 	} else {
-		logger.Infoln("Things - searching by tags: ", *tagsF)
+		a.logger.Infoln("Things - searching by tags: ", *tagsF)
 	}
-	things, err := iotcl.ThingList(ctx, nil, nil, true, utils.ParseTags(tagsF))
+	things, err := a.iotcl.ThingList(ctx, nil, nil, true, utils.ParseTags(tagsF))
 	if err != nil {
 		return []error{err}
 	}
 	thingsMap := make(map[string]iotclient.ArduinoThing, len(things))
 	for _, thing := range things {
-		logger.Infoln("  Thing: ", thing.Id, thing.Name)
+		a.logger.Infoln("  Thing: ", thing.Id, thing.Name)
 		thingsMap[thing.Id] = thing
 	}
 
 	if alignEntities {
-		aligner := entityalign.New(sitewisecl, logger)
-		errs := aligner.Align(ctx, things)
+		propertyDefintions, err := a.iotcl.PropertiesDefinition(ctx)
+		if err != nil {
+			return []error{err}
+		}
+		a.logger.Debugln("Loaded # properties definition: ", len(propertyDefintions))
+		aligner := entityalign.New(a.sitewisecl, a.logger)
+		errs := aligner.Align(ctx, things, propertyDefintions)
 		if errs != nil {
 			return errs
 		}
 	}
 
 	// Extract data points from thing and push to SiteWise
-	tsAlignerClient := tsalign.New(sitewisecl, iotcl, logger)
+	tsAlignerClient := tsalign.New(a.sitewisecl, a.iotcl, a.logger)
 	if err := tsAlignerClient.AlignTimeSeriesSamplesIntoSiteWise(ctx, timeWindowMinutes, thingsMap, resolution); err != nil {
 		return err
 	}

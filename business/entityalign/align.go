@@ -31,6 +31,7 @@ import (
 )
 
 const (
+	waitTimeForModelUpdate = 15
 	alignParallelism = 6
 	keySeparator     = ","
 )
@@ -47,9 +48,10 @@ func New(sitewisecl sitewiseclient.API, logger *logrus.Entry) *aligner {
 	}
 }
 
-func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []error {
+func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing, propertyDefinitions map[string]iotclient.ArduinoPropertytype) []error {
 	a.logger.Infoln("=====> Aligning entities")
 	thingsMap := toThingMap(things)
+	uomMap := extractUomMap(propertyDefinitions)
 	models, modelDefinitions, err := a.getSiteWiseModels(ctx)
 	if err != nil {
 		return []error{err}
@@ -66,14 +68,14 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing) []
 
 	// Align model assests with things for new properties added
 	a.logger.Infoln("=====> Aligning already created models with things")
-	models, errs := a.alignAlreadyCreatedModels(ctx, thingsMap, models, modelDefinitions, assets)
+	models, errs := a.alignAlreadyCreatedModels(ctx, thingsMap, models, modelDefinitions, assets, uomMap)
 	if len(errs) > 0 {
 		return errs
 	}
 
 	// Align not discovered models
 	a.logger.Infoln("=====> Create newly discovred models")
-	models, errs = a.alignModels(ctx, things, models)
+	models, errs = a.alignModels(ctx, things, models, uomMap)
 	if len(errs) > 0 {
 		return errs
 	}
@@ -88,7 +90,8 @@ func (a *aligner) alignAlreadyCreatedModels(
 	thingsMap map[string]iotclient.ArduinoThing,
 	models map[string]*string,
 	modelDefinitions map[string]*iotsitewise.DescribeAssetModelOutput,
-	assets map[string]assetDefintion) (map[string]*string, []error) {
+	assets map[string]assetDefintion,
+	uomMap map[string][]string) (map[string]*string, []error) {
 
 	for _, asset := range assets {
 		a.logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
@@ -117,13 +120,13 @@ func (a *aligner) alignAlreadyCreatedModels(
 					a.logger.Infoln("Thing is contained into given model, skipping model update. Model: ", descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id)
 				} else {
 					a.logger.Warnln("Model and thing are not aligned. Model(key): ", modelKey, " - Thing(key): ", thingKey)
-					err := a.sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing))
+					err := a.sitewisecl.UpdateAssetModelProperties(ctx, descModel, thingPropertiesMap(thing), uomMap)
 					if err != nil {
 						a.logger.Errorln("Error updating model properties for asset: ", asset.assetId, err)
 						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, 5)
+					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForModelUpdate)
 				}
 
 				models[thingKey] = descModel.AssetModelId
@@ -138,7 +141,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 	return models, nil
 }
 
-func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string) (map[string]*string, []error) {
+func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string, uomMap map[string][]string) (map[string]*string, []error) {
 	// Understand if there are models to create
 	for _, thing := range things {
 		propsTypeMap := make(map[string]string, len(thing.Properties))
@@ -158,7 +161,7 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 			var modelName string
 			for i := 0; i < 100; i++ {
 				modelName = composeModelName(thing.Name, i)
-				createdModel, err = a.sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap)
+				createdModel, err = a.sitewisecl.CreateAssetModel(ctx, modelName, propsTypeMap, uomMap)
 				if err != nil {
 					var errConflicc *types.ResourceAlreadyExistsException
 					if errors.As(err, &errConflicc) {
@@ -172,7 +175,7 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 			}
 
 			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, 5)
+			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForModelUpdate)
 			models[key] = createdModel.AssetModelId
 		}
 
@@ -410,4 +413,14 @@ func isThingContainedInModel(modelKey, thingKey string) bool {
 		}
 	}
 	return true
+}
+
+func extractUomMap(types map[string]iotclient.ArduinoPropertytype) map[string][]string {
+	uomMap := make(map[string][]string)
+	for _, prop := range types {
+		if len(prop.Units) > 0 {
+			uomMap[prop.Type] = prop.Units
+		}
+	}
+	return uomMap
 }
