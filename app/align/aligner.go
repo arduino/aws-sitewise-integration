@@ -68,13 +68,13 @@ func (a *entityAligner) StartAlignAndImport(ctx context.Context, tagsF *string, 
 	}
 
 	if alignEntities {
-		propertyDefintion, err := a.iotcl.PropertiesDefinition(ctx)
+		propertyDefintions, err := a.iotcl.PropertiesDefinition(ctx)
 		if err != nil {
 			return []error{err}
 		}
-		a.logger.Infoln("Loaded # properties definition: ", len(propertyDefintion))
+		a.logger.Debugln("Loaded # properties definition: ", len(propertyDefintions))
 		aligner := entityalign.New(a.sitewisecl, a.logger)
-		errs := aligner.Align(ctx, things)
+		errs := aligner.Align(ctx, things, propertyDefintions)
 		if errs != nil {
 			return errs
 		}

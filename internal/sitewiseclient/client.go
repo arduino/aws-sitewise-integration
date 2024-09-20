@@ -48,7 +48,7 @@ type API interface {
 	CreateDataBulkImportJob(ctx context.Context, jobNumber int, bucket string, filesToImport []string, roleArn string) (*iotsitewise.CreateBulkImportJobOutput, error)
 	ListBulkImportJobs(ctx context.Context, nextToken *string) (*iotsitewise.ListBulkImportJobsOutput, error)
 	GetBulkImportJobStatus(ctx context.Context, jobId *string) (*iotsitewise.DescribeBulkImportJobOutput, error)
-	CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error)
+	CreateAssetModel(ctx context.Context, name string, properties map[string]string, uomMap map[string][]string) (*iotsitewise.CreateAssetModelOutput, error)
 	CreateAsset(ctx context.Context, name string, assetModelId string, thingId string) (*iotsitewise.CreateAssetOutput, error)
 	DescribeModel(ctx context.Context, assetModelId string) (*iotsitewise.DescribeAssetModelOutput, error)
 	PollForModelActiveStatus(ctx context.Context, modelId string, maxRetry int) bool
@@ -56,7 +56,7 @@ type API interface {
 	DescribeAsset(ctx context.Context, assetId string) (*iotsitewise.DescribeAssetOutput, error)
 	IsAssetActive(ctx context.Context, asset *iotsitewise.DescribeAssetOutput) bool
 	PollForAssetActiveStatus(ctx context.Context, assetId string, maxRetry int) bool
-	UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error
+	UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string, uomMap map[string][]string) error
 	UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error
 	PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []float64) error
 	PopulateSampledSamplesTimeSeriesByAlias(ctx context.Context, propertyAlias string, ts []int64, values []any) error
@@ -182,16 +182,23 @@ func mapType(ptype string) types.PropertyDataType {
 	return types.PropertyDataTypeString
 }
 
-func (c *IotSiteWiseClient) CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error) {
+func (c *IotSiteWiseClient) CreateAssetModel(ctx context.Context, name string, properties map[string]string, uomMap map[string][]string) (*iotsitewise.CreateAssetModelOutput, error) {
 	var modelProperties []types.AssetModelPropertyDefinition
 	for property, ptype := range properties {
 		mappedType := mapType(ptype)
+		var uom *string
+		if u, ok := uomMap[property]; ok {
+			if len(u) > 0 {
+				uom = &u[0]
+			}
+		}
 		modelProperties = append(modelProperties, types.AssetModelPropertyDefinition{
 			Name:     &property,
 			DataType: mappedType,
 			Type: &types.PropertyType{
 				Measurement: &types.Measurement{},
 			},
+			Unit: uom,
 		})
 	}
 	return c.svc.CreateAssetModel(ctx, &iotsitewise.CreateAssetModelInput{
@@ -257,7 +264,7 @@ func (c *IotSiteWiseClient) PollForAssetActiveStatus(ctx context.Context, assetI
 	return false
 }
 
-func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error {
+func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string, uomMap map[string][]string) error {
 	assetModelInput := iotsitewise.UpdateAssetModelInput{
 		AssetModelId:              assetModel.AssetModelId,
 		AssetModelName:            assetModel.AssetModelName,
@@ -282,12 +289,19 @@ func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, asse
 				assetModelInput.AssetModelProperties = []types.AssetModelProperty{}
 			}
 			mappedType := mapType(ptype)
+			var uom *string
+			if u, ok := uomMap[propertyName]; ok {
+				if len(u) > 0 {
+					uom = &u[0]
+				}
+			}
 			assetModelInput.AssetModelProperties = append(assetModelInput.AssetModelProperties, types.AssetModelProperty{
 				Name:     &propertyName,
 				DataType: mappedType,
 				Type: &types.PropertyType{
 					Measurement: &types.Measurement{},
 				},
+				Unit: uom,
 			})
 		}
 	}

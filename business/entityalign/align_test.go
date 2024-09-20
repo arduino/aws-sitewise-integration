@@ -78,13 +78,14 @@ func TestAlign_AlignAlreadyCreatedModelsIfNeeded(t *testing.T) {
 		thingId: thingId,
 	}
 
-	swclient.On("UpdateAssetModelProperties", ctx, mock.Anything, thingPropertiesMap(thingsMap[thingId])).Return(nil)
+	swclient.On("UpdateAssetModelProperties", ctx, mock.Anything, thingPropertiesMap(thingsMap[thingId]), mock.Anything).Return(nil)
 	swclient.On("PollForModelActiveStatus", ctx, modelId, 5).Return(true)
 
 	models := make(map[string]*string)
+	uomMap := make(map[string][]string)
 
 	aligner := New(swclient, logger)
-	_, errs := aligner.alignAlreadyCreatedModels(ctx, thingsMap, models, modelDefinitions, assets)
+	_, errs := aligner.alignAlreadyCreatedModels(ctx, thingsMap, models, modelDefinitions, assets, uomMap)
 	assert.Nil(t, errs)
 	assert.Equal(t, 1, len(models))
 	assert.Equal(t, modelId, *models["pressure,temperature"])

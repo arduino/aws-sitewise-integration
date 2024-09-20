@@ -46,9 +46,9 @@ func (_m *API) CreateAsset(ctx context.Context, name string, assetModelId string
 	return r0, r1
 }
 
-// CreateAssetModel provides a mock function with given fields: ctx, name, properties
-func (_m *API) CreateAssetModel(ctx context.Context, name string, properties map[string]string) (*iotsitewise.CreateAssetModelOutput, error) {
-	ret := _m.Called(ctx, name, properties)
+// CreateAssetModel provides a mock function with given fields: ctx, name, properties, uomMap
+func (_m *API) CreateAssetModel(ctx context.Context, name string, properties map[string]string, uomMap map[string][]string) (*iotsitewise.CreateAssetModelOutput, error) {
+	ret := _m.Called(ctx, name, properties, uomMap)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateAssetModel")
@@ -56,19 +56,19 @@ func (_m *API) CreateAssetModel(ctx context.Context, name string, properties map
 
 	var r0 *iotsitewise.CreateAssetModelOutput
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, map[string]string) (*iotsitewise.CreateAssetModelOutput, error)); ok {
-		return rf(ctx, name, properties)
+	if rf, ok := ret.Get(0).(func(context.Context, string, map[string]string, map[string][]string) (*iotsitewise.CreateAssetModelOutput, error)); ok {
+		return rf(ctx, name, properties, uomMap)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, map[string]string) *iotsitewise.CreateAssetModelOutput); ok {
-		r0 = rf(ctx, name, properties)
+	if rf, ok := ret.Get(0).(func(context.Context, string, map[string]string, map[string][]string) *iotsitewise.CreateAssetModelOutput); ok {
+		r0 = rf(ctx, name, properties, uomMap)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*iotsitewise.CreateAssetModelOutput)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, map[string]string) error); ok {
-		r1 = rf(ctx, name, properties)
+	if rf, ok := ret.Get(1).(func(context.Context, string, map[string]string, map[string][]string) error); ok {
+		r1 = rf(ctx, name, properties, uomMap)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -472,17 +472,17 @@ func (_m *API) PopulateTimeSeriesByAlias(ctx context.Context, propertyAlias stri
 	return r0
 }
 
-// UpdateAssetModelProperties provides a mock function with given fields: ctx, assetModel, thingProperties
-func (_m *API) UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string) error {
-	ret := _m.Called(ctx, assetModel, thingProperties)
+// UpdateAssetModelProperties provides a mock function with given fields: ctx, assetModel, thingProperties, uomMap
+func (_m *API) UpdateAssetModelProperties(ctx context.Context, assetModel *iotsitewise.DescribeAssetModelOutput, thingProperties map[string]string, uomMap map[string][]string) error {
+	ret := _m.Called(ctx, assetModel, thingProperties, uomMap)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateAssetModelProperties")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, *iotsitewise.DescribeAssetModelOutput, map[string]string) error); ok {
-		r0 = rf(ctx, assetModel, thingProperties)
+	if rf, ok := ret.Get(0).(func(context.Context, *iotsitewise.DescribeAssetModelOutput, map[string]string, map[string][]string) error); ok {
+		r0 = rf(ctx, assetModel, thingProperties, uomMap)
 	} else {
 		r0 = ret.Error(0)
 	}
