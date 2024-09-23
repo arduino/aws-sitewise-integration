@@ -41,10 +41,12 @@ type IotSiteWiseClient struct {
 
 //go:generate mockery --name API --filename sitewise_api.go
 type API interface {
-	ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssetModels(ctx context.Context) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssetModelsNext(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssets(ctx context.Context, assetModelId *string) (*iotsitewise.ListAssetsOutput, error)
+	ListAssetsNext(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
 	DescribeAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DescribeAssetModelOutput, error)
 	DeleteAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DeleteAssetModelOutput, error)
-	ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
 	CreateDataBulkImportJob(ctx context.Context, jobNumber int, bucket string, filesToImport []string, roleArn string) (*iotsitewise.CreateBulkImportJobOutput, error)
 	ListBulkImportJobs(ctx context.Context, nextToken *string) (*iotsitewise.ListBulkImportJobsOutput, error)
 	GetBulkImportJobStatus(ctx context.Context, jobId *string) (*iotsitewise.DescribeBulkImportJobOutput, error)
@@ -87,7 +89,14 @@ func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	}, nil
 }
 
-func (c *IotSiteWiseClient) ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
+func (c *IotSiteWiseClient) ListAssetModels(ctx context.Context) (*iotsitewise.ListAssetModelsOutput, error) {
+	maxRes := int32(100)
+	return c.svc.ListAssetModels(ctx, &iotsitewise.ListAssetModelsInput{
+		MaxResults: &maxRes,
+	})
+}
+
+func (c *IotSiteWiseClient) ListAssetModelsNext(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
 	maxRes := int32(100)
 	return c.svc.ListAssetModels(ctx, &iotsitewise.ListAssetModelsInput{
 		MaxResults: &maxRes,
@@ -107,7 +116,15 @@ func (c *IotSiteWiseClient) DeleteAssetModel(ctx context.Context, assetModelId *
 	})
 }
 
-func (c *IotSiteWiseClient) ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
+func (c *IotSiteWiseClient) ListAssets(ctx context.Context, assetModelId *string) (*iotsitewise.ListAssetsOutput, error) {
+	maxRes := int32(100)
+	return c.svc.ListAssets(ctx, &iotsitewise.ListAssetsInput{
+		MaxResults:   &maxRes,
+		AssetModelId: assetModelId,
+	})
+}
+
+func (c *IotSiteWiseClient) ListAssetsNext(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
 	maxRes := int32(100)
 	return c.svc.ListAssets(ctx, &iotsitewise.ListAssetsInput{
 		MaxResults:   &maxRes,

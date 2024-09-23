@@ -290,7 +290,13 @@ func (a *aligner) getSiteWiseAssets(ctx context.Context, models map[string]*stri
 		next := true
 		var token *string
 		for next {
-			assets, err := a.sitewisecl.ListAssets(ctx, modelId, token)
+			var assets *iotsitewise.ListAssetsOutput
+			var err error
+			if token == nil {
+				assets, err = a.sitewisecl.ListAssets(ctx, modelId)
+			} else {
+				assets, err = a.sitewisecl.ListAssetsNext(ctx, modelId, token)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -322,7 +328,13 @@ func (a *aligner) getSiteWiseModels(ctx context.Context) (map[string]*string, ma
 	next := true
 	var token *string
 	for next {
-		models, err := a.sitewisecl.ListAssetModels(ctx, token)
+		var models *iotsitewise.ListAssetModelsOutput
+		var err error
+		if token == nil {
+			models, err = a.sitewisecl.ListAssetModels(ctx)
+		} else {
+			models, err = a.sitewisecl.ListAssetModelsNext(ctx, token)
+		}
 		if err != nil {
 			return nil, nil, err
 		}

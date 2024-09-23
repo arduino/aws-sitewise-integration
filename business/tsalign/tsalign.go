@@ -47,6 +47,24 @@ func New(sitewisecl sitewiseclient.API, iotcl iot.API, logger *logrus.Entry) *Ts
 	return &TsAligner{sitewisecl: sitewisecl, iotcl: iotcl, logger: logger}
 }
 
+func (a *TsAligner) getAllModels(ctx context.Context) ([]*iotsitewise.ListAssetModelsOutput, error) {
+	results := []*iotsitewise.ListAssetModelsOutput{}
+	var nextToken *string
+	models, err := a.sitewisecl.ListAssetModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, models)
+	for models.NextToken != nil {
+		models, err = a.sitewisecl.ListAssetModelsNext(ctx, nextToken)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, models)
+	}
+	return results, nil
+}
+
 func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	ctx context.Context,
 	timeWindowInMinutes int,
@@ -60,89 +78,97 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	from, to := computeTimeAlignment(resolution, timeWindowInMinutes)
 
 	a.logger.Infoln("=====> Align perf data - time window ", timeWindowInMinutes, " minutes - from ", from, " to ", to, " - resolution ", resolution, " seconds")
-	models, err := a.sitewisecl.ListAssetModels(ctx, nil)
+	allModels, err := a.getAllModels(ctx)
 	if err != nil {
 		return []error{err}
 	}
-	for _, model := range models.AssetModelSummaries {
-		continueimport := true
-		var nextToken *string
-		for continueimport {
-			assets, err := a.sitewisecl.ListAssets(ctx, model.Id, nextToken)
-			if err != nil {
-				return []error{err}
-			}
 
-			for _, asset := range assets.AssetSummaries {
-				if asset.ExternalId == nil {
-					a.logger.Warn("Asset external id not found, skipping it: ", *asset.Name)
-					continue
+	for _, models := range allModels {
+		for _, model := range models.AssetModelSummaries {
+			continueimport := true
+			var nextToken *string
+			for continueimport {
+				var assets *iotsitewise.ListAssetsOutput
+				if nextToken != nil {
+					assets, err = a.sitewisecl.ListAssetsNext(ctx, model.Id, nextToken)
+				} else {
+					assets, err = a.sitewisecl.ListAssets(ctx, model.Id)
 				}
-				// Asset external id is mapped on Thing ID
-				thing, ok := thingsMap[*asset.ExternalId]
-				if !ok {
-					a.logger.Debug("Thing not found, not detected by import filters: ", *asset.ExternalId)
-					continue
-				}
-				propertiesMap := make(map[string]iotclient.ArduinoProperty, len(thing.Properties))
-				for _, p := range thing.Properties {
-					propertiesMap[p.Id] = p
+				if err != nil {
+					return []error{err}
 				}
 
-				tokens <- struct{}{}
-				wg.Add(1)
-
-				go func(assetId string, assetName string, propertiesMap map[string]iotclient.ArduinoProperty) {
-					defer func() { <-tokens }()
-					defer wg.Done()
-
-					describedAsset, err := a.sitewisecl.DescribeAsset(ctx, assetId)
-					if err != nil {
-						a.logger.Error("Error describing asset: ", assetId, err)
-						return
+				for _, asset := range assets.AssetSummaries {
+					if asset.ExternalId == nil {
+						a.logger.Warn("Asset external id not found, skipping it: ", *asset.Name)
+						continue
+					}
+					// Asset external id is mapped on Thing ID
+					thing, ok := thingsMap[*asset.ExternalId]
+					if !ok {
+						a.logger.Debug("Thing not found, not detected by import filters: ", *asset.ExternalId)
+						continue
+					}
+					propertiesMap := make(map[string]iotclient.ArduinoProperty, len(thing.Properties))
+					for _, p := range thing.Properties {
+						propertiesMap[p.Id] = p
 					}
 
-					propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
+					tokens <- struct{}{}
+					wg.Add(1)
 
-					importedProperties := []string{}
-					if len(propertiesToImport) > 0 {
-						p, err := a.populateTSDataIntoSiteWise(ctx, *asset.ExternalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
+					go func(assetId, assetName, externalId string, propertiesMap map[string]iotclient.ArduinoProperty) {
+						defer func() { <-tokens }()
+						defer wg.Done()
+
+						describedAsset, err := a.sitewisecl.DescribeAsset(ctx, assetId)
 						if err != nil {
-							a.logger.Error("Error populating time series data: ", err)
+							a.logger.Error("Error describing asset: ", assetId, err)
+							return
+						}
+
+						propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
+
+						importedProperties := []string{}
+						if len(propertiesToImport) > 0 {
+							p, err := a.populateTSDataIntoSiteWise(ctx, externalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
+							if err != nil {
+								a.logger.Error("Error populating time series data: ", err)
+								errorChannel <- err
+								return
+							}
+							if len(p) > 0 {
+								importedProperties = append(importedProperties, p...)
+							}
+						}
+
+						if len(charPropertiesToImport) > 0 {
+							p, err := a.populateCharTSDataIntoSiteWise(ctx, externalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
+							if err != nil {
+								a.logger.Error("Error populating string based time series data: ", err)
+								errorChannel <- err
+								return
+							}
+							if len(p) > 0 {
+								importedProperties = append(importedProperties, p...)
+							}
+						}
+
+						// Check if there are properties that have been imported (on_change - import last value)
+						err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, propertiesToImportAliases)
+						if err != nil {
+							a.logger.Error("Error populating last values time series data: ", err)
 							errorChannel <- err
 							return
 						}
-						if len(p) > 0 {
-							importedProperties = append(importedProperties, p...)
-						}
-					}
 
-					if len(charPropertiesToImport) > 0 {
-						p, err := a.populateCharTSDataIntoSiteWise(ctx, *asset.ExternalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
-						if err != nil {
-							a.logger.Error("Error populating string based time series data: ", err)
-							errorChannel <- err
-							return
-						}
-						if len(p) > 0 {
-							importedProperties = append(importedProperties, p...)
-						}
-					}
+					}(*asset.Id, *asset.Name, *asset.ExternalId, propertiesMap)
+				}
 
-					// Check if there are properties that have been imported (on_change - import last value)
-					err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, propertiesToImportAliases)
-					if err != nil {
-						a.logger.Error("Error populating last values time series data: ", err)
-						errorChannel <- err
-						return
-					}
-
-				}(*asset.Id, *asset.Name, propertiesMap)
-			}
-
-			nextToken = assets.NextToken
-			if nextToken == nil {
-				continueimport = false
+				nextToken = assets.NextToken
+				if nextToken == nil {
+					continueimport = false
+				}
 			}
 		}
 	}
