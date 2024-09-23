@@ -127,11 +127,11 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 							return
 						}
 
-						propertiesToImport, charPropertiesToImport, propertiesToImportAliases := a.mapPropertiesToImport(describedAsset, thing, assetName)
+						mappedProperties := a.mapPropertiesToImport(describedAsset, thing, assetName)
 
 						importedProperties := []string{}
-						if len(propertiesToImport) > 0 {
-							p, err := a.populateTSDataIntoSiteWise(ctx, externalId, propertiesToImport, propertiesToImportAliases, resolution, from, to)
+						if len(mappedProperties.PropertiesToImport) > 0 {
+							p, err := a.populateTSDataIntoSiteWise(ctx, externalId, mappedProperties, resolution, from, to)
 							if err != nil {
 								a.logger.Error("Error populating time series data: ", err)
 								errorChannel <- err
@@ -142,8 +142,8 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 							}
 						}
 
-						if len(charPropertiesToImport) > 0 {
-							p, err := a.populateCharTSDataIntoSiteWise(ctx, externalId, charPropertiesToImport, propertiesToImportAliases, resolution, from, to)
+						if len(mappedProperties.CharPropertiesToImport) > 0 {
+							p, err := a.populateCharTSDataIntoSiteWise(ctx, externalId, mappedProperties, resolution, from, to)
 							if err != nil {
 								a.logger.Error("Error populating string based time series data: ", err)
 								errorChannel <- err
@@ -155,7 +155,7 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 						}
 
 						// Check if there are properties that have been imported (on_change - import last value)
-						err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, propertiesToImportAliases)
+						err = a.populateLastValueForOnChangeProperties(ctx, propertiesMap, importedProperties, mappedProperties.PropertiesToImportAliases)
 						if err != nil {
 							a.logger.Error("Error populating last values time series data: ", err)
 							errorChannel <- err
@@ -192,7 +192,13 @@ func (a *TsAligner) AlignTimeSeriesSamplesIntoSiteWise(
 	return nil
 }
 
-func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) ([]string, []string, map[string]string) {
+type mappedProperties struct {
+	PropertiesToImport        []string
+	CharPropertiesToImport    []string
+	PropertiesToImportAliases map[string]string
+}
+
+func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAssetOutput, thing iotclient.ArduinoThing, assetName string) *mappedProperties {
 	propertiesToImport := []string{}
 	charPropertiesToImport := []string{}
 	propertiesToImportAliases := make(map[string]string, len(describedAsset.AssetProperties))
@@ -209,7 +215,11 @@ func (a *TsAligner) mapPropertiesToImport(describedAsset *iotsitewise.DescribeAs
 			}
 		}
 	}
-	return propertiesToImport, charPropertiesToImport, propertiesToImportAliases
+	return &mappedProperties{
+		PropertiesToImport:        propertiesToImport,
+		CharPropertiesToImport:    charPropertiesToImport,
+		PropertiesToImportAliases: propertiesToImportAliases,
+	}
 }
 
 func computeTimeAlignment(resolutionSeconds, timeWindowInMinutes int) (time.Time, time.Time) {
@@ -240,8 +250,7 @@ func randomRateLimitingSleep() {
 func (a *TsAligner) populateTSDataIntoSiteWise(
 	ctx context.Context,
 	thingID string,
-	propertiesToImport []string,
-	propertiesToImportAliases map[string]string,
+	mappedProperties *mappedProperties,
 	resolution int,
 	from, to time.Time) ([]string, error) {
 
@@ -268,14 +277,14 @@ func (a *TsAligner) populateTSDataIntoSiteWise(
 		}
 
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
-		if !slices.Contains(propertiesToImport, propertyID) {
+		if !slices.Contains(mappedProperties.PropertiesToImport, propertyID) {
 			propertiesImported = append(propertiesImported, propertyID)
 		}
-		if !slices.Contains(propertiesToImport, propertyID) {
+		if !slices.Contains(mappedProperties.PropertiesToImport, propertyID) {
 			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
 		}
-		alias := propertiesToImportAliases[propertyID]
+		alias := mappedProperties.PropertiesToImportAliases[propertyID]
 		if alias == "" {
 			a.logger.Warn("Alias not found. Skipping import.")
 			continue
@@ -332,8 +341,7 @@ func joinTs(ts []int64) string {
 func (a *TsAligner) populateCharTSDataIntoSiteWise(
 	ctx context.Context,
 	thingID string,
-	propertiesToImport []string,
-	propertiesToImportAliases map[string]string,
+	mappedProperties *mappedProperties,
 	resolution int,
 	from, to time.Time) ([]string, error) {
 
@@ -343,7 +351,7 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 	var retry bool
 	for i := 0; i < retryCount; i++ {
 		// ctx context.Context, propertiesToImport []string, from, to time.Time, interval int32
-		batched, retry, err = a.iotcl.GetTimeSeriesSampling(ctx, propertiesToImport, from, to, int32(resolution))
+		batched, retry, err = a.iotcl.GetTimeSeriesSampling(ctx, mappedProperties.CharPropertiesToImport, from, to, int32(resolution))
 		if !retry {
 			break
 		} else {
@@ -361,14 +369,14 @@ func (a *TsAligner) populateCharTSDataIntoSiteWise(
 		}
 
 		propertyID := strings.Replace(response.Query, "property.", "", 1)
-		if !slices.Contains(propertiesToImport, propertyID) {
+		if !slices.Contains(mappedProperties.CharPropertiesToImport, propertyID) {
 			propertiesImported = append(propertiesImported, propertyID)
 		}
-		if !slices.Contains(propertiesToImport, propertyID) {
+		if !slices.Contains(mappedProperties.CharPropertiesToImport, propertyID) {
 			a.logger.Debugf("Not mapped property %s. Skipping import.\n", propertyID)
 			continue
 		}
-		alias := propertiesToImportAliases[propertyID]
+		alias := mappedProperties.PropertiesToImportAliases[propertyID]
 		if alias == "" {
 			a.logger.Warn("Alias not found. Skipping import.")
 			continue
