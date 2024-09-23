@@ -106,12 +106,14 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		return nil, err
 	}
 
+	executionTimeUtc := time.Now().UTC()
 	alignEntities := true
 	lastSync, _ := paramReader.ReadConfig(LastModelSync, stack)
 	if lastSync != nil {
 		if lastTimeSync, err := strconv.ParseInt(*lastSync, 10, 64); err == nil {
-			diffSeconds := time.Now().UTC().Unix() - lastTimeSync
-			if diffSeconds < 55*60*60 { // 55 minutes
+			diffSeconds := executionTimeUtc.Unix() - lastTimeSync
+			logger.Debugf("Last sync was %d seconds ago - now %d, last %d - ", diffSeconds, executionTimeUtc.Unix(), lastTimeSync)
+			if diffSeconds < 55*60 { // 55 minutes
 				alignEntities = false // Skip aligning entities
 			}
 		}
@@ -152,7 +154,7 @@ func HandleRequest(ctx context.Context, event *SiteWiseImportTrigger) (*string, 
 		return nil, errs[0]
 	} else {
 		if alignEntities {
-			if err = paramReader.UpdateParameterValue(LastModelSync, stack, strconv.FormatInt(time.Now().UTC().Unix(), 10)); err != nil {
+			if err = paramReader.UpdateParameterValue(LastModelSync, stack, strconv.FormatInt(executionTimeUtc.Unix(), 10)); err != nil {
 				logger.Error("Error updating parameter "+paramReader.ResolveParameter(LastModelSync, stack), err)
 			}
 		}
