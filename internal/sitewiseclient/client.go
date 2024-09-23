@@ -41,10 +41,12 @@ type IotSiteWiseClient struct {
 
 //go:generate mockery --name API --filename sitewise_api.go
 type API interface {
-	ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssetModels(ctx context.Context) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssetModelsNext(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error)
+	ListAssets(ctx context.Context, assetModelId *string) (*iotsitewise.ListAssetsOutput, error)
+	ListAssetsNext(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
 	DescribeAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DescribeAssetModelOutput, error)
 	DeleteAssetModel(ctx context.Context, assetModelId *string) (*iotsitewise.DeleteAssetModelOutput, error)
-	ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error)
 	CreateDataBulkImportJob(ctx context.Context, jobNumber int, bucket string, filesToImport []string, roleArn string) (*iotsitewise.CreateBulkImportJobOutput, error)
 	ListBulkImportJobs(ctx context.Context, nextToken *string) (*iotsitewise.ListBulkImportJobsOutput, error)
 	GetBulkImportJobStatus(ctx context.Context, jobId *string) (*iotsitewise.DescribeBulkImportJobOutput, error)
@@ -87,7 +89,14 @@ func New(logger *logrus.Entry) (*IotSiteWiseClient, error) {
 	}, nil
 }
 
-func (c *IotSiteWiseClient) ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
+func (c *IotSiteWiseClient) ListAssetModels(ctx context.Context) (*iotsitewise.ListAssetModelsOutput, error) {
+	maxRes := int32(100)
+	return c.svc.ListAssetModels(ctx, &iotsitewise.ListAssetModelsInput{
+		MaxResults: &maxRes,
+	})
+}
+
+func (c *IotSiteWiseClient) ListAssetModelsNext(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
 	maxRes := int32(100)
 	return c.svc.ListAssetModels(ctx, &iotsitewise.ListAssetModelsInput{
 		MaxResults: &maxRes,
@@ -107,7 +116,15 @@ func (c *IotSiteWiseClient) DeleteAssetModel(ctx context.Context, assetModelId *
 	})
 }
 
-func (c *IotSiteWiseClient) ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
+func (c *IotSiteWiseClient) ListAssets(ctx context.Context, assetModelId *string) (*iotsitewise.ListAssetsOutput, error) {
+	maxRes := int32(100)
+	return c.svc.ListAssets(ctx, &iotsitewise.ListAssetsInput{
+		MaxResults:   &maxRes,
+		AssetModelId: assetModelId,
+	})
+}
+
+func (c *IotSiteWiseClient) ListAssetsNext(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
 	maxRes := int32(100)
 	return c.svc.ListAssets(ctx, &iotsitewise.ListAssetsInput{
 		MaxResults:   &maxRes,
@@ -316,15 +333,23 @@ func (c *IotSiteWiseClient) UpdateAssetModelProperties(ctx context.Context, asse
 	return nil
 }
 
+type propertyDefinition struct {
+	ArduinoPropertyId string
+	AssetProperty     *types.AssetProperty
+}
+
 // property is map with key as SiteWise property id and as value the alias of the property to be updated
 func (c *IotSiteWiseClient) UpdateAssetProperties(ctx context.Context, assetId string, thingProperties map[string]string) error {
 	assetDescribed, err := c.DescribeAsset(context.Background(), assetId)
 	if err != nil {
 		return err
 	}
-	assetPropertiesMap := make(map[string]string, len(thingProperties))
+	assetPropertiesMap := make(map[string]propertyDefinition, len(thingProperties))
 	for _, prop := range assetDescribed.AssetProperties {
-		assetPropertiesMap[*prop.Name] = *prop.Id
+		assetPropertiesMap[*prop.Name] = propertyDefinition{
+			ArduinoPropertyId: *prop.Id,
+			AssetProperty:     &prop,
+		}
 	}
 
 	for property, alias := range thingProperties {
@@ -333,9 +358,15 @@ func (c *IotSiteWiseClient) UpdateAssetProperties(ctx context.Context, assetId s
 			c.logger.Info("Property not found in asset: ", property)
 			continue
 		}
+
+		// Check if property is already updated
+		if sitewisePropertyId.AssetProperty.Alias != nil && *sitewisePropertyId.AssetProperty.Alias == alias {
+			continue
+		}
+
 		_, err := c.svc.UpdateAssetProperty(ctx, &iotsitewise.UpdateAssetPropertyInput{
 			AssetId:       &assetId,
-			PropertyId:    &sitewisePropertyId,
+			PropertyId:    &sitewisePropertyId.ArduinoPropertyId,
 			PropertyAlias: &alias,
 		})
 		if err != nil {

@@ -292,12 +292,42 @@ func (_m *API) IsModelActive(ctx context.Context, model *iotsitewise.DescribeAss
 	return r0
 }
 
-// ListAssetModels provides a mock function with given fields: ctx, nextToken
-func (_m *API) ListAssetModels(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
-	ret := _m.Called(ctx, nextToken)
+// ListAssetModels provides a mock function with given fields: ctx
+func (_m *API) ListAssetModels(ctx context.Context) (*iotsitewise.ListAssetModelsOutput, error) {
+	ret := _m.Called(ctx)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAssetModels")
+	}
+
+	var r0 *iotsitewise.ListAssetModelsOutput
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context) (*iotsitewise.ListAssetModelsOutput, error)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) *iotsitewise.ListAssetModelsOutput); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*iotsitewise.ListAssetModelsOutput)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ListAssetModelsNext provides a mock function with given fields: ctx, nextToken
+func (_m *API) ListAssetModelsNext(ctx context.Context, nextToken *string) (*iotsitewise.ListAssetModelsOutput, error) {
+	ret := _m.Called(ctx, nextToken)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListAssetModelsNext")
 	}
 
 	var r0 *iotsitewise.ListAssetModelsOutput
@@ -322,12 +352,42 @@ func (_m *API) ListAssetModels(ctx context.Context, nextToken *string) (*iotsite
 	return r0, r1
 }
 
-// ListAssets provides a mock function with given fields: ctx, assetModelId, nextToken
-func (_m *API) ListAssets(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
-	ret := _m.Called(ctx, assetModelId, nextToken)
+// ListAssets provides a mock function with given fields: ctx, assetModelId
+func (_m *API) ListAssets(ctx context.Context, assetModelId *string) (*iotsitewise.ListAssetsOutput, error) {
+	ret := _m.Called(ctx, assetModelId)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAssets")
+	}
+
+	var r0 *iotsitewise.ListAssetsOutput
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *string) (*iotsitewise.ListAssetsOutput, error)); ok {
+		return rf(ctx, assetModelId)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *string) *iotsitewise.ListAssetsOutput); ok {
+		r0 = rf(ctx, assetModelId)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*iotsitewise.ListAssetsOutput)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *string) error); ok {
+		r1 = rf(ctx, assetModelId)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ListAssetsNext provides a mock function with given fields: ctx, assetModelId, nextToken
+func (_m *API) ListAssetsNext(ctx context.Context, assetModelId *string, nextToken *string) (*iotsitewise.ListAssetsOutput, error) {
+	ret := _m.Called(ctx, assetModelId, nextToken)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListAssetsNext")
 	}
 
 	var r0 *iotsitewise.ListAssetsOutput

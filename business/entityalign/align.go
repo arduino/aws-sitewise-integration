@@ -31,9 +31,9 @@ import (
 )
 
 const (
-	waitTimeForModelUpdate = 15
-	alignParallelism = 6
-	keySeparator     = ","
+	waitTimeForSitewiseUpdate = 15
+	alignParallelism          = 6
+	keySeparator              = ","
 )
 
 type aligner struct {
@@ -74,7 +74,7 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing, pr
 	}
 
 	// Align not discovered models
-	a.logger.Infoln("=====> Create newly discovred models")
+	a.logger.Infoln("=====> Create newly discovered models")
 	models, errs = a.alignModels(ctx, things, models, uomMap)
 	if len(errs) > 0 {
 		return errs
@@ -92,6 +92,8 @@ func (a *aligner) alignAlreadyCreatedModels(
 	modelDefinitions map[string]*iotsitewise.DescribeAssetModelOutput,
 	assets map[string]assetDefintion,
 	uomMap map[string][]string) (map[string]*string, []error) {
+
+	modelsToWait := []*string{}
 
 	for _, asset := range assets {
 		a.logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
@@ -126,7 +128,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForModelUpdate)
+					modelsToWait = append(modelsToWait, descModel.AssetModelId)
 				}
 
 				models[thingKey] = descModel.AssetModelId
@@ -138,11 +140,38 @@ func (a *aligner) alignAlreadyCreatedModels(
 		}
 	}
 
+	a.modelUpdater(ctx, modelsToWait)
+
 	return models, nil
+}
+
+func (a *aligner) modelUpdater(ctx context.Context, modelsToWait []*string) {
+	if len(modelsToWait) > 0 {
+		var wg sync.WaitGroup
+		tokens := make(chan struct{}, alignParallelism)
+
+		for _, modelId := range modelsToWait {
+
+			tokens <- struct{}{}
+			wg.Add(1)
+
+			go func(mlId string) {
+				defer func() { <-tokens }()
+				defer wg.Done()
+
+				a.logger.Infof("Wait for model [%s] to be active...\n", mlId)
+				a.sitewisecl.PollForModelActiveStatus(ctx, mlId, waitTimeForSitewiseUpdate)
+			}(*modelId)
+		}
+
+		// Wait for all models to be active
+		wg.Wait()
+	}
 }
 
 func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string, uomMap map[string][]string) (map[string]*string, []error) {
 	// Understand if there are models to create
+	modelsToWait := []*string{}
 	for _, thing := range things {
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
@@ -174,12 +203,13 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 				break
 			}
 
-			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForModelUpdate)
+			modelsToWait = append(modelsToWait, createdModel.AssetModelId)
 			models[key] = createdModel.AssetModelId
 		}
 
 	}
+
+	a.modelUpdater(ctx, modelsToWait)
 
 	return models, nil
 }
@@ -234,7 +264,7 @@ func (a *aligner) alignAssets(ctx context.Context, things []iotclient.ArduinoThi
 				assetId = assetObj.AssetId
 
 				// Wait for asset to be active before updating properties...
-				a.sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
+				a.sitewisecl.PollForAssetActiveStatus(ctx, *assetId, waitTimeForSitewiseUpdate)
 			}
 
 			err := a.sitewisecl.UpdateAssetProperties(ctx, *assetId, propsAliasMap)
@@ -290,7 +320,13 @@ func (a *aligner) getSiteWiseAssets(ctx context.Context, models map[string]*stri
 		next := true
 		var token *string
 		for next {
-			assets, err := a.sitewisecl.ListAssets(ctx, modelId, token)
+			var assets *iotsitewise.ListAssetsOutput
+			var err error
+			if token == nil {
+				assets, err = a.sitewisecl.ListAssets(ctx, modelId)
+			} else {
+				assets, err = a.sitewisecl.ListAssetsNext(ctx, modelId, token)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -322,7 +358,13 @@ func (a *aligner) getSiteWiseModels(ctx context.Context) (map[string]*string, ma
 	next := true
 	var token *string
 	for next {
-		models, err := a.sitewisecl.ListAssetModels(ctx, token)
+		var models *iotsitewise.ListAssetModelsOutput
+		var err error
+		if token == nil {
+			models, err = a.sitewisecl.ListAssetModels(ctx)
+		} else {
+			models, err = a.sitewisecl.ListAssetModelsNext(ctx, token)
+		}
 		if err != nil {
 			return nil, nil, err
 		}

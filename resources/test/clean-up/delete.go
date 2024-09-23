@@ -72,7 +72,7 @@ func HandleRequest(ctx context.Context, dev bool) (*string, error) {
 		return nil, err
 	}
 
-	out, err := sitewisecl.ListAssetModels(ctx, nil)
+	out, err := sitewisecl.ListAssetModels(ctx)
 	if err != nil {
 		return nil, err
 	}
