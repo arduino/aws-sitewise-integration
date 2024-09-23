@@ -31,9 +31,9 @@ import (
 )
 
 const (
-	waitTimeForModelUpdate = 15
-	alignParallelism = 6
-	keySeparator     = ","
+	waitTimeForSitewiseUpdate = 15
+	alignParallelism          = 6
+	keySeparator              = ","
 )
 
 type aligner struct {
@@ -126,7 +126,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForModelUpdate)
+					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForSitewiseUpdate)
 				}
 
 				models[thingKey] = descModel.AssetModelId
@@ -175,7 +175,7 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 			}
 
 			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForModelUpdate)
+			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForSitewiseUpdate)
 			models[key] = createdModel.AssetModelId
 		}
 
@@ -234,7 +234,7 @@ func (a *aligner) alignAssets(ctx context.Context, things []iotclient.ArduinoThi
 				assetId = assetObj.AssetId
 
 				// Wait for asset to be active before updating properties...
-				a.sitewisecl.PollForAssetActiveStatus(ctx, *assetId, 10)
+				a.sitewisecl.PollForAssetActiveStatus(ctx, *assetId, waitTimeForSitewiseUpdate)
 			}
 
 			err := a.sitewisecl.UpdateAssetProperties(ctx, *assetId, propsAliasMap)
