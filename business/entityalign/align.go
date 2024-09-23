@@ -93,6 +93,8 @@ func (a *aligner) alignAlreadyCreatedModels(
 	assets map[string]assetDefintion,
 	uomMap map[string][]string) (map[string]*string, []error) {
 
+	modelsToWait := []*string{}
+
 	for _, asset := range assets {
 		a.logger.Debugln("Asset: ", asset.assetId, " - model: ", asset.modelId, " - thing: ", asset.thingId)
 		// Get associated thing
@@ -126,7 +128,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 						return models, []error{err}
 					}
 					a.logger.Infoln("Model properties updated for model: ", *descModel.AssetModelId, " - key: ", modelKey, " - thing: ", thing.Id, " - wait for model to be active...")
-					a.sitewisecl.PollForModelActiveStatus(ctx, *descModel.AssetModelId, waitTimeForSitewiseUpdate)
+					modelsToWait = append(modelsToWait, descModel.AssetModelId)
 				}
 
 				models[thingKey] = descModel.AssetModelId
@@ -138,7 +140,33 @@ func (a *aligner) alignAlreadyCreatedModels(
 		}
 	}
 
+	a.modelUpdater(ctx, modelsToWait)
+
 	return models, nil
+}
+
+func (a *aligner) modelUpdater(ctx context.Context, modelsToWait []*string) {
+	if len(modelsToWait) > 0 {
+		var wg sync.WaitGroup
+		tokens := make(chan struct{}, alignParallelism)
+
+		for _, modelId := range modelsToWait {
+
+			tokens <- struct{}{}
+			wg.Add(1)
+
+			go func(mlId string) {
+				defer func() { <-tokens }()
+				defer wg.Done()
+
+				a.logger.Infof("Wait for model [%s] to be active...\n", mlId)
+				a.sitewisecl.PollForModelActiveStatus(ctx, mlId, waitTimeForSitewiseUpdate)
+			}(*modelId)
+		}
+
+		// Wait for all models to be active
+		wg.Wait()
+	}
 }
 
 func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string, uomMap map[string][]string) (map[string]*string, []error) {
@@ -181,27 +209,7 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 
 	}
 
-	if len(modelsToWait) > 0 {
-		var wg sync.WaitGroup
-		tokens := make(chan struct{}, alignParallelism)
-
-		for _, modelId := range modelsToWait {
-
-			tokens <- struct{}{}
-			wg.Add(1)
-
-			go func(mlId string) {
-				defer func() { <-tokens }()
-				defer wg.Done()
-
-				a.logger.Infof("Wait for model [%s] to be active...\n", mlId)
-				a.sitewisecl.PollForModelActiveStatus(ctx, mlId, waitTimeForSitewiseUpdate)
-			}(*modelId)
-		}
-
-		// Wait for all models to be active
-		wg.Wait()
-	}
+	a.modelUpdater(ctx, modelsToWait)
 
 	return models, nil
 }
