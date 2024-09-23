@@ -74,7 +74,7 @@ func (a *aligner) Align(ctx context.Context, things []iotclient.ArduinoThing, pr
 	}
 
 	// Align not discovered models
-	a.logger.Infoln("=====> Create newly discovred models")
+	a.logger.Infoln("=====> Create newly discovered models")
 	models, errs = a.alignModels(ctx, things, models, uomMap)
 	if len(errs) > 0 {
 		return errs
@@ -143,6 +143,7 @@ func (a *aligner) alignAlreadyCreatedModels(
 
 func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThing, models map[string]*string, uomMap map[string][]string) (map[string]*string, []error) {
 	// Understand if there are models to create
+	modelsToWait := []*string{}
 	for _, thing := range things {
 		propsTypeMap := make(map[string]string, len(thing.Properties))
 		for _, prop := range thing.Properties {
@@ -174,11 +175,32 @@ func (a *aligner) alignModels(ctx context.Context, things []iotclient.ArduinoThi
 				break
 			}
 
-			a.logger.Infof("Wait for model [%s] to be active...\n", modelName)
-			a.sitewisecl.PollForModelActiveStatus(ctx, *createdModel.AssetModelId, waitTimeForSitewiseUpdate)
+			modelsToWait = append(modelsToWait, createdModel.AssetModelId)
 			models[key] = createdModel.AssetModelId
 		}
 
+	}
+
+	if len(modelsToWait) > 0 {
+		var wg sync.WaitGroup
+		tokens := make(chan struct{}, alignParallelism)
+
+		for _, modelId := range modelsToWait {
+
+			tokens <- struct{}{}
+			wg.Add(1)
+
+			go func(mlId string) {
+				defer func() { <-tokens }()
+				defer wg.Done()
+
+				a.logger.Infof("Wait for model [%s] to be active...\n", mlId)
+				a.sitewisecl.PollForModelActiveStatus(ctx, mlId, waitTimeForSitewiseUpdate)
+			}(*modelId)
+		}
+
+		// Wait for all models to be active
+		wg.Wait()
 	}
 
 	return models, nil
