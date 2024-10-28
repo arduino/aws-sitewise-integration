@@ -1,15 +1,15 @@
 # AWS IoT SiteWise importer
 
-This project provides a way to extract time series samples from Arduino cloud, publishing into AWS IoT SiteWise.
-Other than publishing ts samples, job is able to create Models/Assets into SiteWise starting from Arduino defined Things.
-Things can be filterd by tags.
+This project provides a way to extract time series samples from Arduino cloud, publishing into AWS IoT SiteWise, creating 
+required model/asset hierarchy mapping Arduino Things into SiteWise Assets.
+Arduino Things can be filterd by tags, to properly select objects to monitor.
 
 ## Architecture
 
 ![deployment schema](docs/deployment-schema.png)
 
-Imported is based on a Go lambda function triggered by periodic events from EventBridge.
-Job is configured to extract samples every 30 minutes. By default, data are aggregated at 5 minute resolution (as AVG).
+Job is based on a Go lambda function triggered by periodic events from AWS EventBridge.
+Job is configured to extract samples every 30 minutes (configurable). By default, time series data are aggregated at 5 minute resolution (as AVG aggregation statistic).
 
 ## Deployment via Cloud Formation Template
 
@@ -28,7 +28,7 @@ To see runtime required permissions, see policies defined in [cloud formation te
 Before creating a stack, it is required to create a temporary S3 bucket where storing lambda binaries.
 
 Follow these steps to deploy a new stack:
-* download [lambda code binaries](https://github.com/arduino/aws-sitewise-integration/releases) and [Cloud Formation Template](deployment/cloud-formation-template/deployment.yaml)
+* download [lambda code binaries](https://github.com/arduino/aws-sitewise-integration/releases) and [Cloud Formation Template](https://github.com/arduino/aws-sitewise-integration/releases). See releases page for latest stable release.
 * upload CFT and binary zip file on an S3 bucket accessible by the AWS account. For the CFT yaml file, copy the Object URL (it will be required in next step).
 
 * start creation of a new cloud formation stack
